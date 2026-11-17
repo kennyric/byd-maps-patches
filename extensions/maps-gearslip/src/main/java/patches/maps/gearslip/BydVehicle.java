@@ -46,7 +46,7 @@ public final class BydVehicle {
      * TEMPORARY: renders fixed values so the display path can be verified before byd-open-remote
      * publishes the provider. False in every real build; flipped only for a demo APK.
      */
-    static boolean DEMO = true;
+    static boolean DEMO = false;
     private static final ExecutorService QUERIES = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "byd-vehicle");
         thread.setDaemon(true);
@@ -240,6 +240,9 @@ public final class BydVehicle {
         if (text.equals(lastApplied)) return;
         double distance = siblingDistanceKm(view);
         if (distance >= 0) setRemainingKm(distance);
+        // Self-healing: if the cache is stale (never read, or a grant arrived later), re-query.
+        // refresh() is debounced, so ticking once a second cannot flood the provider.
+        if (!DEMO && !fresh(timestamp, System.currentTimeMillis())) refresh(activity.getApplicationContext());
         int level = chargeLevel();
         if (level < 0) return;
         // "19 min • 47%": the expected charge, as text, in Maps' own line.
