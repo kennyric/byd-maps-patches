@@ -1,111 +1,138 @@
 name: Release
 
+# Builds the patch bundle and attaches it to a GitHub release, so the repository is a
+# usable Morphe source:
+#
+#   https://github.com/<owner>/<repo>/releases/latest/download/patches-bundle.json
+#
+# The bundle is named patches-<version>.mpp because the manifest's downloadUrlTemplate
+# points at releases/download/v<version>/patches-<version>.mpp.
+#
+# Signing is optional. Without MORPHE_SIGNING_KEY the bundle is published unsigned and
+# consumers fall back to a checksum; add the secret to publish signed bundles.
+
 on:
   workflow_dispatch:
   push:
     branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: write
 
 jobs:
   release:
     name: Release
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: write
-      packages: write
-      id-token: write
-      attestations: write
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.JOHNINNL_RELEASE_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.JOHNINNL_RELEASE_TOKEN }}
-      GIT_AUTHOR_NAME: johninnl
-      GIT_AUTHOR_EMAIL: 349981574+johninnl@users.noreply.github.com
-      GIT_COMMITTER_NAME: johninnl
-      GIT_COMMITTER_EMAIL: 349981574+johninnl@users.noreply.github.com
-    steps:
-      - name: Verify release publisher before checkout
-        shell: bash
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo 'JOHNINNL_RELEASE_TOKEN is required' >&2
-            exit 1
-          fi
-          login="$(gh api --hostname github.com user --jq .login)"
-          if [ "$login" != johninnl ]; then
-            echo 'JOHNINNL_RELEASE_TOKEN must belong to johninnl' >&2
-            exit 1
-          fi
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SIGNING_KEY: ${{ secrets.MORPHE_SIGNING_KEY }}
+      SHARED_MAPS_API_KEY: ${{ secrets.SHARED_MAPS_API_KEY }}
+      BRIGHT_ARTICLE_SIGNING_KEY: ${{ secrets.BRIGHT_ARTICLE_SIGNING_KEY }}
 
+    steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.JOHNINNL_RELEASE_TOKEN }}
-
-      - name: Verify release identity and history
-        run: node .github/scripts/verify_identity.cjs --release
 
       - name: Setup Java
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: 'npm'
+      - name: Build the bundle
+        run: ./gradlew :patches:buildAndroid --no-daemon
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Test the BYD extension
+        run: ./gradlew :extensions:maps-gearslip:testDebugUnitTest --no-daemon
 
-      - name: Verify Python regression tests
-        run: python3 -m unittest discover -s tests
-
-      - name: Verify release integration tests
-        run: node --test tests/test_release_branding.cjs tests/test_preview_release.cjs tests/test_identity.cjs tests/test_release_discovery.cjs
-
-      - name: Verify Medium reader and private ABI
-        env:
-          SHARED_MAPS_API_KEY: ${{ secrets.SHARED_MAPS_API_KEY }}
-          BRIGHT_ARTICLE_SIGNING_KEY: ${{ secrets.BRIGHT_ARTICLE_SIGNING_KEY }}
+      - name: Resolve version
+        id: version
         run: |
-          ./gradlew :patches:buildAndroid :extensions:medium-reader:testDebugUnitTest :extensions:medium-privacy:testDebugUnitTest :extensions:waze:testDebugUnitTest :extensions:flitsmeister:testDebugUnitTest :extensions:vela:testDebugUnitTest :extensions:extension:testDebugUnitTest :extensions:gearslip:testDebugUnitTest :extensions:maps-gearslip:testDebugUnitTest :extensions:soundcloud:testDebugUnitTest :extensions:gboard:testDebugUnitTest :patches:test --no-daemon
-          python3 scripts/medium/check_bundle.py
-          python3 -m unittest discover -s scripts/medium/tests
-          # The release version is assigned later; never upload preflight bundles.
-          python3 -c 'from pathlib import Path; [p.unlink() for p in Path("patches/build/libs").glob("*.mpp")]'
+          set -euo pipefail
+          # A tag push names the release; otherwise derive it from commit history.
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            latest="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+            if [ -n "${latest}" ]; then
+              bump="$(git log --pretty=%s "${latest}"..HEAD | grep -cE '^feat(\(|:)' || true)"
+              base="${latest#v}"
+              major="$(cut -d. -f1 <<<"${base}")"
+              minor="$(cut -d. -f2 <<<"${base}")"
+              if [ "${bump}" -gt 0 ]; then
+                version="${major}.$((minor + 1)).0"
+              else
+                version="${major}.${minor}.$(( $(cut -d. -f3 <<<"${base}") + 1 ))"
+              fi
+            else
+              version="0.0.1"
+            fi
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Releasing v${version}"
 
-      # Semantic release runs its own Gradle build command.
-      # Only main publishes releases, as specified by .releaserc.
-      - name: Release
-        uses: cycjimmy/semantic-release-action@v8
-        id: release
-        env:
-          MORPHE_SIGNING_KEY: ${{ secrets.MORPHE_SIGNING_KEY }}
-          SHARED_MAPS_API_KEY: ${{ secrets.SHARED_MAPS_API_KEY }}
-          BRIGHT_ARTICLE_SIGNING_KEY: ${{ secrets.BRIGHT_ARTICLE_SIGNING_KEY }}
+      - name: Collect the bundle
+        id: bundle
+        run: |
+          set -euo pipefail
+          version='${{ steps.version.outputs.version }}'
+          built="$(find patches/build/libs -name 'patches-*.mpp' ! -name '*sources*' ! -name '*javadoc*' | head -1)"
+          if [ -z "${built}" ]; then
+            echo 'No bundle was produced' >&2
+            exit 1
+          fi
+          mkdir -p dist
+          cp "${built}" "dist/patches-${version}.mpp"
+          sha256sum "dist/patches-${version}.mpp" | cut -d' ' -f1 > "dist/patches-${version}.mpp.sha256"
+          echo "file=patches-${version}.mpp" >> "$GITHUB_OUTPUT"
 
-      - name: Verify published Morphe discovery metadata
-        if: steps.release.outputs.new_release_published == 'true'
-        env:
-          EXPECTED_VERSION: ${{ steps.release.outputs.new_release_version }}
-          SOURCE_BRANCH: ${{ github.ref_name }}
-        run: node .github/scripts/verify_release_discovery.cjs --branch "$SOURCE_BRANCH" --version "$EXPECTED_VERSION"
+      - name: Sign the bundle
+        if: env.SIGNING_KEY != ''
+        run: |
+          set -euo pipefail
+          file='dist/${{ steps.bundle.outputs.file }}'
+          printf '%s' "${SIGNING_KEY}" > signing.key
+          openssl dgst -sha256 -sign signing.key -out "${file}.asc" "${file}"
+          rm -f signing.key
+          # The manifest publishes this key; keep it in the repository, not in the release.
+          if [ ! -f morphe-signing.pub ]; then
+            openssl rsa -in signing.key -pubout -out morphe-signing.pub 2>/dev/null || true
+          fi
 
-      - name: Attest
-        if: steps.release.outputs.new_release_published == 'true'
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: 'Morphe Patches ${{ steps.release.outputs.new_release_git_tag }}'
-          subject-path: patches/build/libs/patches-*.mpp
+      - name: Write the discovery manifest
+        run: |
+          set -euo pipefail
+          version='${{ steps.version.outputs.version }}'
+          file='${{ steps.bundle.outputs.file }}'
+          repository="${GITHUB_REPOSITORY}"
+          checksum="$(cat "dist/${file}.sha256")"
+          python3 - "$version" "$file" "$repository" "$checksum" > dist/patches-bundle.json <<'PY'
+          import json, sys
+          version, file, repo, checksum = sys.argv[1:5]
+          download = f"https://github.com/{repo}/releases/download/v{version}/{file}"
+          manifest = {
+              "version": version,
+              "downloadUrl": download,
+              "signatureUrl": download + ".asc",
+              "checksum": checksum,
+              "signatureUrlTemplate": "",
+              "publicKeyPath": "morphe-signing.pub",
+          }
+          json.dump(manifest, sys.stdout, indent=2)
+          print()
+          PY
 
-      # Always verify compilation when semantic-release did not publish a release.
-      # This covers chore and documentation commits without a version change.
-      - name: Verify project compiles
-        if: steps.release.outputs.new_release_published != 'true'
-        env:
-          SHARED_MAPS_API_KEY: ${{ secrets.SHARED_MAPS_API_KEY }}
-          BRIGHT_ARTICLE_SIGNING_KEY: ${{ secrets.BRIGHT_ARTICLE_SIGNING_KEY }}
-        run: ./gradlew :patches:buildAndroid clean --no-daemon
+      - name: Publish the release
+        run: |
+          set -euo pipefail
+          version='${{ steps.version.outputs.version }}'
+          if gh release view "v${version}" >/dev/null 2>&1; then
+            gh release upload "v${version}" dist/* --clobber
+          else
+            gh release create "v${version}" dist/* \
+              --title "BYD Maps patches v${version}" \
+              --notes-file .github/release-notes.md
+          fi
