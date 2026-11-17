@@ -337,7 +337,10 @@ public final class BydVehicle {
     private static final String SUFFIX_TAIL = " • ";
 
     /** How often Maps asks the app for fresher data; the app debounces independently. */
-    private static final long POKE_INTERVAL_MS = 15L * 60L * 1000L;
+    /** Default refresh interval; the Customization screen ("BYD battery refresh") overrides it. */
+    private static final int POKE_DEFAULT_MINUTES = 15;
+    private static final String PREFS = "ungoogled_ui";
+    private static final String PREF_REFRESH_MINUTES = "byd_refresh_minutes";
     private static volatile long lastPokeAt;
     /** Last moment Maps showed its navigation UI; a poke is only allowed while this is fresh. */
     private static volatile long lastNavigationAt;
@@ -350,10 +353,18 @@ public final class BydVehicle {
         long now = System.currentTimeMillis();
         // Only while navigating: browsing the map must never cost a cloud request.
         if (now - lastNavigationAt > NAVIGATION_WINDOW_MS) return;
-        // First poke of a trip is immediate, so the card is right from the start.
-        if (lastPokeAt != 0 && now - lastPokeAt < POKE_INTERVAL_MS) return;
         android.content.Context context = appContext();
         if (context == null) return;
+        int minutes;
+        try {
+            minutes = context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+                    .getInt(PREF_REFRESH_MINUTES, POKE_DEFAULT_MINUTES);
+        } catch (RuntimeException unreadable) {
+            minutes = POKE_DEFAULT_MINUTES;
+        }
+        if (minutes <= 0) return;
+        // First poke of a trip is immediate, so the card is right from the start.
+        if (lastPokeAt != 0 && now - lastPokeAt < minutes * 60_000L) return;
         lastPokeAt = now;
         try {
             android.content.Intent intent = new android.content.Intent(ACTION_REQUEST_REFRESH);
