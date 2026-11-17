@@ -89,6 +89,11 @@ jobs:
               version="${major}.${minor}.$(( $(cut -d. -f3 <<<"${base}") + 1 ))"
             fi
           fi
+          # A tag that exists upstream but not in our history still reserves the version.
+          if git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; then
+            echo "v${version} is already tagged; refusing to reuse it" >&2
+            exit 1
+          fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Releasing v${version}"
 
