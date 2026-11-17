@@ -167,7 +167,7 @@ public final class ProjectionRenderer {
         });
     }
     public void start() {}
-    public void resume() { resumed = true; guard(() -> { if (created) lifecycle(5); telemetrySession(true); telemetrySurface(decor()); }); }
+    public void resume() { resumed = true; guard(() -> { if (created) lifecycle(5); telemetrySession(true); telemetrySurface(decor()); markProbe(); }); }
     public void pause() { resumed = false; guard(() -> { telemetrySession(false); finishTouch(); if (created) lifecycle(3); }); }
     public void stop() { resumed = false; guard(() -> { telemetrySession(false); finishTouch(); if (created) lifecycle(2); }); }
     public void close() {
@@ -552,6 +552,22 @@ public final class ProjectionRenderer {
         Method method = presentation.getClass().getMethod("f");
         Window window = (Window) method.invoke(presentation);
         return window == null ? null : window.getDecorView();
+    }
+
+    /**
+     * Anchor-verification pass (BydLabelProbe): names Maps' own car texts just after the host first
+     * sees the surface, and logs the map so a screenshot can be read without guessing. Removed once
+     * the view the vehicle figures belong on is known.
+     */
+    private void markProbe() {
+        main.postDelayed(() -> guard(() -> logProbe("BYD probe")), 3000L);
+        main.postDelayed(() -> guard(() -> logProbe("BYD probe (guidance)")), 12000L);
+    }
+
+    /** Repaint, then log what the pass painted, so the screenshot and the log agree. */
+    private void logProbe(String tag) throws Exception {
+        BydLabelProbe.beginPass();
+        Log.i("MapsNativeCar", tag + ": " + BydLabelProbe.markHierarchy(decor()));
     }
     private void finishTouch() throws Exception {
         main.removeCallbacks(endScroll);

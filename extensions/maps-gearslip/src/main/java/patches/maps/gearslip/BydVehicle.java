@@ -228,66 +228,6 @@ public final class BydVehicle {
             "([0-9]+(?:[.,][0-9]+)?)\\s*(mi|km|m|ft|miles|mile|kilometres|kilometers|kilometre|kilometer|feet|foot)\\b",
             java.util.regex.Pattern.CASE_INSENSITIVE);
 
-    /** The battery box: its own view, so the charge reads as state rather than as route text. */
-    private static volatile WeakReference<TextView> box;
-    private static volatile WeakReference<android.app.Activity> boxOwner;
-
-    private static void showBatteryBox(android.app.Activity activity) {
-        int charge = DEMO ? 62 : soc;
-        if (charge < 0) return;
-        TextView view = box == null ? null : box.get();
-        WeakReference<android.app.Activity> owner = boxOwner;
-        if (view == null || owner == null || owner.get() != activity || view.getParent() == null) {
-            view = createBatteryBox(activity, charge);
-            if (view == null) return;
-            box = new WeakReference<>(view);
-            boxOwner = new WeakReference<>(activity);
-        } else {
-            view.setText(charge + "%");
-        }
-    }
-
-    private static TextView createBatteryBox(android.app.Activity activity, int charge) {
-        android.view.ViewGroup root = activity.findViewById(android.R.id.content);
-        if (root == null) return null;
-        float density = activity.getResources().getDisplayMetrics().density;
-        // Shaped like Maps' own speed box: a rounded square with a big value and a small unit,
-        // so the charge reads as vehicle state rather than as route text.
-        android.widget.LinearLayout box = new android.widget.LinearLayout(activity);
-        box.setOrientation(android.widget.LinearLayout.VERTICAL);
-        box.setGravity(android.view.Gravity.CENTER);
-        TextView value = new TextView(activity);
-        value.setText(String.valueOf(charge));
-        value.setTextColor(0xFFFFFFFF);
-        value.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 20f);
-        value.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        value.setGravity(android.view.Gravity.CENTER);
-        TextView percent = new TextView(activity);
-        percent.setText("%");
-        percent.setTextColor(0xFFB0B0B0);
-        percent.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 10f);
-        percent.setGravity(android.view.Gravity.CENTER);
-        box.addView(value);
-        box.addView(percent);
-        android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
-        background.setColor(0xE6000000);
-        background.setCornerRadius(12 * density);
-        box.setBackground(background);
-        int size = Math.round(52 * density);
-        android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
-                size, size, android.view.Gravity.BOTTOM | android.view.Gravity.START);
-        // Beside the speed box, in the free map area: clear of the zoom column above it.
-        params.leftMargin = Math.round(80 * density);
-        params.bottomMargin = Math.round(127 * density);
-        try {
-            root.addView(box, params);
-        } catch (RuntimeException rejected) {
-            Log.w(TAG, "Battery box could not be added", rejected);
-            return null;
-        }
-        return value;
-    }
-
     private static void paint(android.app.Activity activity) {
         int id = activity.getResources().getIdentifier(
                 "navigation_time_remaining_label", "id", activity.getPackageName());
@@ -297,11 +237,15 @@ public final class BydVehicle {
         CharSequence current = view.getText();
         if (current == null || current.length() == 0) return;
         String text = current.toString();
+        if (text.equals(lastApplied)) return;
         double distance = siblingDistanceKm(view);
         if (distance >= 0) setRemainingKm(distance);
-        // The card shows the expected charge as an icon, so the ETA line itself stays untouched.
         int level = chargeLevel();
-        paintIcon(view, level);
+        if (level < 0) return;
+        // "19 min • 47%": the expected charge, as text, in Maps' own line.
+        String line = text + " • " + level + "%";
+        lastApplied = line;
+        view.setText(line);
     }
 
     /** Expected charge on arrival, or the current charge when the distance is unknown; -1 for none. */
@@ -318,24 +262,8 @@ public final class BydVehicle {
         return charge;
     }
 
-    private static volatile WeakReference<BydBatteryIcon> icon;
-    private static volatile WeakReference<TextView> iconOwner;
-
-    /** Puts the gauge at the end of the ETA line, once per view. */
-    private static void paintIcon(TextView view, int level) {
-        if (level < 0) return;
-        BydBatteryIcon gauge = icon == null ? null : icon.get();
-        WeakReference<TextView> owner = iconOwner;
-        if (gauge == null || owner == null || owner.get() != view) {
-            gauge = new BydBatteryIcon(view.getResources().getDisplayMetrics().density);
-            icon = new WeakReference<>(gauge);
-            iconOwner = new WeakReference<>(view);
-            int gap = Math.round(6 * view.getResources().getDisplayMetrics().density);
-            view.setCompoundDrawablePadding(gap);
-            view.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, gauge, null);
-        }
-        gauge.setCharge(level);
-    }
+    /** The decorated line we last wrote, so Maps' own repaint can be told apart from ours. */
+    private static volatile String lastApplied = "";
 
     /** Queries the provider off the UI thread; the answer lands in the cache for the next bind. */
     public static void refresh(Context context) {
