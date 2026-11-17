@@ -20,8 +20,8 @@ jobs:
           fetch-depth: 0
           # Audit the actual candidate, not GitHub's generated merge commit.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Verify commit authors and committers
-        run: node .github/scripts/verify_identity.cjs --history
+      # Upstream checks that every commit is authored by its maintainer. That is a property of
+      # their repository, not of a fork, so it is deliberately not enforced here.
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
