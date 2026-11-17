@@ -63,4 +63,59 @@ public final class BydEtaText {
     public static String decorateMarker(String original) {
         return decorate(original, 62, 310, "km");
     }
+
+    /**
+     * The battery percentage expected on arrival: the current charge minus what the remaining
+     * distance costs, using the car's own km-per-percent as the rate. Returns -1 when the inputs
+     * cannot answer the question, so callers can fall back to the current charge.
+     */
+    public static int arrivalPercent(int soc, int rangeKm, double remainingKm) {
+        if (soc <= 0 || soc > 100) return -1;
+        if (rangeKm <= 0) return -1;
+        if (!Double.isFinite(remainingKm) || remainingKm < 0) return -1;
+        double kmPerPercent = (double) rangeKm / soc;
+        double cost = remainingKm / kmPerPercent;
+        long arrival = Math.round(soc - cost);
+        if (arrival < 0) arrival = 0;
+        return (int) Math.min(arrival, soc);
+    }
+
+    /** "62%" or "arrive 41%": one percentage, never a distance. */
+    public static String percentage(int value) {
+        return value + "%";
+    }
+
+    /** The arrival suffix appended to the ETA line, or "" when nothing can be estimated. */
+    public static String arrivalSuffix(int arrivalPercent) {
+        return arrivalPercent < 0 ? "" : " · arrive " + arrivalPercent + "%";
+    }
+
+    /**
+     * The ETA line carrying the battery expected on arrival, or the current charge when the
+     * distance is unknown. Non-navigation messages and unknown values are left untouched.
+     */
+    public static String withArrival(String original, int soc, int arrivalPercent) {
+        if (original == null || original.isEmpty() || !looksLikeEta(original)) return original;
+        if (arrivalPercent >= 0) return original + arrivalSuffix(arrivalPercent);
+        if (soc >= 0) return original + SEPARATOR + percentage(soc);
+        return original;
+    }
+
+    /** Kilometres from a distance in {@code unit}; -1 when the unit is not a distance. */
+    public static double kilometres(double value, String unit) {
+        if (!Double.isFinite(value) || value < 0) return -1;
+        String normalised = unit == null ? "km" : unit.trim().toLowerCase(Locale.ROOT);
+        switch (normalised) {
+            case "km": case "kilometre": case "kilometres": case "kilometer": case "kilometers":
+                return value;
+            case "mi": case "mile": case "miles":
+                return value * 1.609344;
+            case "m": case "metre": case "metres": case "meter": case "meters":
+                return value / 1000.0;
+            case "ft": case "foot": case "feet":
+                return value * 0.0003048;
+            default:
+                return -1;
+        }
+    }
 }
