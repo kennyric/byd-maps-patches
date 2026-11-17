@@ -28,9 +28,15 @@ val prepareNativeShadowHook = tasks.register("prepareNativeShadowHook") {
             shadowHookDirectory.get().file("jni/arm64-v8a/$name").asFile.copyTo(destination.resolve(name), overwrite = true)
         }
         // Direct process arguments preserve the ELF token; no shell expansion is involved.
-        providers.exec {
-            commandLine("patchelf", "--set-rpath", "\$ORIGIN", destination.resolve("libshadowhook.so").absolutePath)
-        }.result.get().assertNormalExitValue()
+        // patchelf is not packaged for Windows; without it the helper simply keeps its original
+        // rpath, which only affects the Waze tile-camera native bridge, not the Maps patches.
+        try {
+            providers.exec {
+                commandLine("patchelf", "--set-rpath", "\$ORIGIN", destination.resolve("libshadowhook.so").absolutePath)
+            }.result.get().assertNormalExitValue()
+        } catch (missing: Exception) {
+            logger.warn("patchelf unavailable; libshadowhook.so keeps its original rpath")
+        }
     }
 }
 
