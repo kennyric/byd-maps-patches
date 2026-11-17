@@ -560,14 +560,15 @@ public final class ProjectionRenderer {
      * the view the vehicle figures belong on is known.
      */
     private void markProbe() {
-        main.postDelayed(() -> guard(() -> logProbe("BYD probe")), 3000L);
-        main.postDelayed(() -> guard(() -> logProbe("BYD probe (guidance)")), 12000L);
+        main.postDelayed(() -> guard(this::decorateCar), 3000L);
+        main.postDelayed(() -> guard(this::decorateCar), 9000L);
     }
 
-    /** Repaint, then log what the pass painted, so the screenshot and the log agree. */
-    private void logProbe(String tag) throws Exception {
-        BydLabelProbe.beginPass();
-        Log.i("MapsNativeCar", tag + ": " + BydLabelProbe.markHierarchy(decor()));
+    /** Hands Maps' car surface to the vehicle decorator, and keeps it decorated while resumed. */
+    private void decorateCar() throws Exception {
+        View root = decor();
+        if (root == null) return;
+        BydVehicle.setCarSurface(root);
     }
     private void finishTouch() throws Exception {
         main.removeCallbacks(endScroll);

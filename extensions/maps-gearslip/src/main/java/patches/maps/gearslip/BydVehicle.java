@@ -10,6 +10,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.View;
 import android.widget.TextView;
 
 import java.lang.ref.WeakReference;
@@ -60,6 +61,8 @@ public final class BydVehicle {
     private static volatile long lastQueryAt;
     /** Remaining route distance in kilometres, -1 when the navigation strip could not be read. */
     private static volatile double remainingKm = -1;
+    /** Maps' own car surface, set by the projection renderer while a host is attached. */
+    private static volatile WeakReference<View> carSurface;
 
     private BydVehicle() {
     }
@@ -97,9 +100,11 @@ public final class BydVehicle {
         }
     }
 
-    /** True when {@code ts} is recent enough to show. */
+    /** True when {@code ts} is recent enough to show; seconds are tolerated for old payloads. */
     static boolean fresh(long ts, long now) {
-        return ts > 0 && now - ts <= MAX_AGE_MS;
+        if (ts <= 0) return false;
+        long millis = ts < 100_000_000_000L ? ts * 1000L : ts;
+        return now - millis <= MAX_AGE_MS;
     }
 
     /** Validates and caches one reading; out-of-range values are ignored rather than shown. */
@@ -127,6 +132,8 @@ public final class BydVehicle {
             }
             mainHandler = new Handler(Looper.getMainLooper());
             mainHandler.post(TICK);
+            // One line that answers "which Maps build am I running?" without guessing.
+            Log.i(TAG, "build=" + (DEMO ? "demo" : "real") + " demo=" + DEMO);
             refresh(app);
         } catch (RuntimeException denied) {
             // A missing permission or an unsupported registration must not affect Maps at all.
@@ -172,6 +179,9 @@ public final class BydVehicle {
                 WeakReference<android.app.Activity> current = resumed;
                 android.app.Activity activity = current == null ? null : current.get();
                 if (activity != null) paint(activity);
+                WeakReference<View> car = carSurface;
+                View surface = car == null ? null : car.get();
+                if (surface != null) paintCar(surface);
             } catch (RuntimeException ignored) {
                 // Never let the decoration affect Maps' own rendering.
             } finally {
@@ -180,6 +190,59 @@ public final class BydVehicle {
             }
         }
     };
+
+    /** Registers the car surface; the renderer calls this when the host has one. */
+    public static void setCarSurface(View surface) {
+        carSurface = surface == null ? null : new WeakReference<>(surface);
+        paintCar(surface);
+    }
+
+    public static void clearCarSurface() {
+        carSurface = null;
+    }
+
+    /**
+     * The car card is drawn into Maps' own surface, where no call-site hook reaches the ETA box
+     * (class bhmg). It is decorated here instead, and re-applied on every tick because Maps
+     * repaints those lines itself.
+     */
+    private static void paintCar(View root) {
+        int level = chargeLevel();
+        if (level < 0) return;
+        paintCar(root, level);
+    }
+
+    private static void paintCar(View view, int level) {
+        if (view == null) return;
+        if (view instanceof TextView) {
+            TextView text = (TextView) view;
+            CharSequence current = text.getText();
+            if (current != null) {
+                String value = current.toString();
+                if (looksLikeEtaLine(value) && !value.endsWith(SUFFIX_TAIL + level + "%")) {
+                    text.setText(value + SUFFIX_TAIL + level + "%");
+                }
+            }
+        }
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) paintCar(group.getChildAt(i), level);
+        }
+    }
+
+    /** A line that carries a route duration or distance, and no charge of ours yet. */
+    private static boolean looksLikeEtaLine(String value) {
+        if (value.isEmpty() || value.contains(SUFFIX_TAIL)) return false;
+        if (value.length() > 40) return false;
+        String lower = value.toLowerCase(java.util.Locale.ROOT);
+        boolean digit = false;
+        for (int i = 0; i < lower.length() && !digit; i++) digit = Character.isDigit(lower.charAt(i));
+        if (!digit) return false;
+        return lower.contains("min") || lower.contains("km") || lower.contains("mi")
+                || lower.contains("hr") || lower.contains("ft");
+    }
+
+    private static final String SUFFIX_TAIL = " • ";
 
     /** "15 mi" / "1.2 km" / "350 ft" near the ETA, converted to kilometres; -1 when unreadable. */
     private static double siblingDistanceKm(TextView time) {

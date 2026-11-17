@@ -132,4 +132,38 @@ public final class BydLabelProbe {
     static boolean labelled(CharSequence text) {
         return !TextUtils.isEmpty(text) && text.charAt(0) == '~';
     }
+
+    // ---- value probe: one distinctive number per injection point -------------------------------
+
+    private static String number(CharSequence text, String value) {
+        if (text == null) return null;
+        String prefix = value + "% ";
+        String existing = text.toString();
+        return existing.startsWith(prefix) ? existing : prefix + existing;
+    }
+
+    /** Turn-card distance line. */
+    public static String number999(TextView view, CharSequence text) {
+        return number(text, "999");
+    }
+
+    /** Turn-card road/cue line. */
+    public static String number998(TextView view, CharSequence text) {
+        return number(text, "998");
+    }
+
+    /** "Then …" next-step line. */
+    public static String number997(TextView view, CharSequence text) {
+        return number(text, "997");
+    }
+
+    /** The status binder that fills @id/status_text (both ETA lines). */
+    public static String number996(TextView view, CharSequence text) {
+        return number(text, "996");
+    }
+
+    /** The status value object, i.e. upstream of every view hook. */
+    public static String number995(String text) {
+        return number(text, "995");
+    }
 }

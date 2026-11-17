@@ -109,15 +109,16 @@ val bydLabelProbePatch = bytecodePatch(
     execute {
         // Each declared setText on these views, plus the status binder that fills @id/status_text.
         // The receiver and text registers are already live at the call, so the hook needs no scratch
-        // register and cannot disturb the surrounding method.
+        // register and cannot disturb the surrounding method. Each site paints its own number, so a
+        // screenshot says which injection actually reaches the car screen.
         val sites = listOf(
-            "Lcom/google/android/libraries/geo/navcore/turncard/views/TurnCardStepDistanceTextView;" to "a",
-            "Lcom/google/android/libraries/geo/navcore/turncard/views/TurnCardStepCueTextView;" to "b",
-            "Lcom/google/android/libraries/geo/navcore/turncard/views/TurnCardNextStepInstructionView;" to "a",
-            "Lbmkg;" to "a",
+            Triple("Lcom/google/android/libraries/geo/navcore/turncard/views/TurnCardStepDistanceTextView;", "a", "999"),
+            Triple("Lcom/google/android/libraries/geo/navcore/turncard/views/TurnCardStepCueTextView;", "b", "998"),
+            Triple("Lcom/google/android/libraries/geo/navcore/turncard/views/TurnCardNextStepInstructionView;", "a", "997"),
+            Triple("Lbmkg;", "a", "996"),
         )
         var hooked = 0
-        for ((owner, name) in sites) {
+        for ((owner, name, value) in sites) {
             val methods = mutableClassDefBy(owner).methods.filter { it.name == name }
             if (methods.isEmpty()) throw PatchException("Maps' navigation card changed: $owner->$name is gone")
             for (method in methods) {
@@ -133,7 +134,7 @@ val bydLabelProbePatch = bytecodePatch(
                     val view = call.registerC
                     val text = call.registerD
                     method.addInstructions(index, """
-                        invoke-static {v$view, v$text}, Lpatches/maps/gearslip/BydLabelProbe;->label(Landroid/widget/TextView;Ljava/lang/CharSequence;)Ljava/lang/String;
+                        invoke-static {v$view, v$text}, Lpatches/maps/gearslip/BydLabelProbe;->number$value(Landroid/widget/TextView;Ljava/lang/CharSequence;)Ljava/lang/String;
                         move-result-object v$text
                     """)
                     hooked++
@@ -149,5 +150,17 @@ val bydLabelProbePatch = bytecodePatch(
         }
         if (hooked == 0) throw PatchException("Maps' navigation card has no setText call to label")
         println("BYD probe: hooked $hooked setText call(s) in ${sites.size} classes")
+
+        // 995: the status value object itself, upstream of every view, so it survives a repaint.
+        val status = mutableClassDefBy("Lbltz;")
+        val ctor = status.methods.single {
+            it.name == "<init>" && it.parameterTypes.map(CharSequence::toString) ==
+                listOf("Lblty;", "Ljava/lang/String;", "Lj$/util/Optional;", "Lbluk;")
+        }
+        ctor.addInstructions(1, """
+            invoke-static {p2}, Lpatches/maps/gearslip/BydLabelProbe;->number995(Ljava/lang/String;)Ljava/lang/String;
+            move-result-object p2
+        """)
+        println("BYD probe: status value object hooked with 995")
     }
 }
