@@ -67,7 +67,27 @@ jobs:
               version="${major}.${minor}.$(( $(cut -d. -f3 <<<"${base}") + 1 ))"
             fi
           else
-            version="0.0.1"
+            # A tag can exist without being an ancestor (upstream released after our base).
+            # Taking the greater of the two avoids reusing a version upstream already published.
+            described="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+            highest="$(git tag --list 'v*' --sort=-v:refname | head -1)"
+            if [ -z "${described}" ] && [ -z "${highest}" ]; then
+              # Refusing is deliberate: inventing 0.0.1 once produced a release whose only
+              # purpose was to trigger this job again.
+              echo 'No v* tag exists, so the next version is undefined.' >&2
+              echo 'Push the tags from the source repository, then re-run.' >&2
+              exit 1
+            fi
+            latest="$(printf '%s\n%s\n' "${described#v}" "${highest#v}" | grep -v '^$' | sort -V | tail -1)"
+            bump="$(git log --pretty=%s "${described:-HEAD}"..HEAD | grep -cE '^feat(\(|:)' || true)"
+            base="${latest}"
+            major="$(cut -d. -f1 <<<"${base}")"
+            minor="$(cut -d. -f2 <<<"${base}")"
+            if [ "${bump}" -gt 0 ]; then
+              version="${major}.$((minor + 1)).0"
+            else
+              version="${major}.${minor}.$(( $(cut -d. -f3 <<<"${base}") + 1 ))"
+            fi
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Releasing v${version}"
@@ -128,9 +148,9 @@ jobs:
           set -euo pipefail
           version='${{ steps.version.outputs.version }}'
           if gh release view "v${version}" >/dev/null 2>&1; then
-            gh release upload "v${version}" dist/* --clobber
-          else
-            gh release create "v${version}" dist/* \
-              --title "BYD Maps patches v${version}" \
-              --notes-file .github/release-notes.md
+            echo "v${version} is already published; nothing to do"
+            exit 0
           fi
+          gh release create "v${version}" dist/* \
+            --title "BYD Maps patches v${version}" \
+            --notes-file .github/release-notes.md
