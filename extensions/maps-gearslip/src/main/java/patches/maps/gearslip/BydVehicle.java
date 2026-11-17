@@ -182,6 +182,7 @@ public final class BydVehicle {
                 WeakReference<View> car = carSurface;
                 View surface = car == null ? null : car.get();
                 if (surface != null) paintCar(surface);
+                maybePoke();
             } catch (RuntimeException ignored) {
                 // Never let the decoration affect Maps' own rendering.
             } finally {
@@ -242,13 +243,18 @@ public final class BydVehicle {
         if (!(root instanceof android.view.ViewGroup)) return;
         TextView duration = findDuration(root);
         if (duration == null) return;
+        lastNavigationAt = System.currentTimeMillis();
         double distance = distanceInTree(root);
         if (distance >= 0) setRemainingKm(distance);
         int level = chargeLevel();
         if (level < 0) return;
-        TextView chip = ensureChip((android.view.ViewGroup) root, duration.getCurrentTextColor());
-        String label = level + "%";
+        TextView chip = ensureChip((android.view.ViewGroup) root, duration);
+        int current = currentCharge();
+        String label = current < 0
+                ? level + "%"
+                : current == level ? current + "%" : current + "% → " + level + "%";
         if (!label.contentEquals(chip.getText())) chip.setText(label);
+        chip.setTextColor(duration.getCurrentTextColor());
         placeChip(chip, duration, root);
     }
 
@@ -267,20 +273,26 @@ public final class BydVehicle {
         return null;
     }
 
-    private static TextView ensureChip(android.view.ViewGroup root, int color) {
+    private static TextView ensureChip(android.view.ViewGroup root, TextView card) {
         TextView chip = carChip == null ? null : carChip.get();
-        if (chip != null && chip.getParent() == root) return chip;
         float density = root.getResources().getDisplayMetrics().density;
+        // Sized from the card's own text (px), so the chip follows whatever density the host
+        // renders the car surface at instead of assuming this device's sp scale.
+        float textPx = Math.max(card.getTextSize() * 0.62f, 16f * density);
+        if (chip != null && chip.getParent() == root) {
+            if (Math.abs(chip.getTextSize() - textPx) > 0.5f) chip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textPx);
+            return chip;
+        }
         chip = new TextView(root.getContext());
-        chip.setTextColor(color);
-        chip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f);
+        chip.setTextColor(card.getCurrentTextColor());
+        chip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textPx);
         chip.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         chip.setGravity(android.view.Gravity.CENTER);
-        int horizontal = Math.round(9 * density), vertical = Math.round(3 * density);
+        int horizontal = Math.round(textPx * 0.45f), vertical = Math.round(textPx * 0.20f);
         chip.setPadding(horizontal, vertical, horizontal, vertical);
         android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
         background.setColor(0xF2000000);
-        background.setCornerRadius(7 * density);
+        background.setCornerRadius(textPx * 0.35f);
         chip.setBackground(background);
         try {
             root.addView(chip, new android.view.ViewGroup.LayoutParams(
@@ -323,6 +335,40 @@ public final class BydVehicle {
     }
 
     private static final String SUFFIX_TAIL = " • ";
+
+    /** How often Maps asks the app for fresher data; the app debounces independently. */
+    private static final long POKE_INTERVAL_MS = 15L * 60L * 1000L;
+    private static volatile long lastPokeAt;
+    /** Last moment Maps showed its navigation UI; a poke is only allowed while this is fresh. */
+    private static volatile long lastNavigationAt;
+
+    /**
+     * Asks byd-open-remote to refresh from the cloud. Without this the card can show nothing until
+     * the app is opened by hand, because its own sync is on a long, user-configurable interval.
+     */
+    private static void maybePoke() {
+        long now = System.currentTimeMillis();
+        // Only while navigating: browsing the map must never cost a cloud request.
+        if (now - lastNavigationAt > NAVIGATION_WINDOW_MS) return;
+        // First poke of a trip is immediate, so the card is right from the start.
+        if (lastPokeAt != 0 && now - lastPokeAt < POKE_INTERVAL_MS) return;
+        android.content.Context context = appContext();
+        if (context == null) return;
+        lastPokeAt = now;
+        try {
+            android.content.Intent intent = new android.content.Intent(ACTION_REQUEST_REFRESH);
+            intent.setPackage(AUTHORITY_PACKAGE);
+            context.sendBroadcast(intent);
+            Log.i(TAG, "poke -> " + AUTHORITY_PACKAGE);
+        } catch (RuntimeException ignored) {
+            // A poke is an optimisation; the provider stays the source of truth.
+        }
+    }
+
+    /** How recently the navigation UI must have been seen for a poke to be allowed. */
+    private static final long NAVIGATION_WINDOW_MS = 15_000L;
+    private static final String ACTION_REQUEST_REFRESH = "com.bydopenremote.app.action.REQUEST_REFRESH";
+    private static final String AUTHORITY_PACKAGE = "com.bydopenremote.app";
 
     /** "15 mi" / "1.2 km" / "350 ft" near the ETA, converted to kilometres; -1 when unreadable. */
     private static double siblingDistanceKm(TextView time) {
@@ -377,6 +423,7 @@ public final class BydVehicle {
         if (id == 0) return;
         TextView view = activity.findViewById(id);
         if (view == null) return;
+        lastNavigationAt = System.currentTimeMillis();
         CharSequence current = view.getText();
         if (current == null || current.length() == 0) return;
         String text = current.toString();
@@ -392,6 +439,13 @@ public final class BydVehicle {
         String line = text + " • " + level + "%";
         lastApplied = line;
         view.setText(line);
+    }
+
+    /** The charge the car reports right now; -1 when nothing fresh is known. */
+    static int currentCharge() {
+        if (DEMO) return 62;
+        if (!fresh(timestamp, System.currentTimeMillis())) return -1;
+        return soc;
     }
 
     /** Expected charge on arrival, or the current charge when the distance is unknown; -1 for none. */
