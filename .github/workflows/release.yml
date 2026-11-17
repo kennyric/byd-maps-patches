@@ -15,7 +15,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    tags: ['v*']
 
 permissions:
   contents: write
@@ -23,6 +22,8 @@ permissions:
 jobs:
   release:
     name: Release
+    # Publishing is main-only, matching upstream's policy.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,24 +53,21 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          # A tag push names the release; otherwise derive it from commit history.
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            latest="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
-            if [ -n "${latest}" ]; then
-              bump="$(git log --pretty=%s "${latest}"..HEAD | grep -cE '^feat(\(|:)' || true)"
-              base="${latest#v}"
-              major="$(cut -d. -f1 <<<"${base}")"
-              minor="$(cut -d. -f2 <<<"${base}")"
-              if [ "${bump}" -gt 0 ]; then
-                version="${major}.$((minor + 1)).0"
-              else
-                version="${major}.${minor}.$(( $(cut -d. -f3 <<<"${base}") + 1 ))"
-              fi
+          # Derive the version from history: a feature since the last tag bumps the minor
+          # version, anything else bumps the patch version.
+          latest="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          if [ -n "${latest}" ]; then
+            bump="$(git log --pretty=%s "${latest}"..HEAD | grep -cE '^feat(\(|:)' || true)"
+            base="${latest#v}"
+            major="$(cut -d. -f1 <<<"${base}")"
+            minor="$(cut -d. -f2 <<<"${base}")"
+            if [ "${bump}" -gt 0 ]; then
+              version="${major}.$((minor + 1)).0"
             else
-              version="0.0.1"
+              version="${major}.${minor}.$(( $(cut -d. -f3 <<<"${base}") + 1 ))"
             fi
+          else
+            version="0.0.1"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Releasing v${version}"
