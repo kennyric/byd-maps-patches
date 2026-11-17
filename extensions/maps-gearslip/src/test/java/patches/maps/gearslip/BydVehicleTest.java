@@ -66,6 +66,12 @@ public class BydVehicleTest {
         assertEquals("17 min · 62%", BydVehicle.decorate("17 min"));
     }
 
+    @Test public void secondsStampsAreStillFresh() {
+        long nowMillis = System.currentTimeMillis();
+        // The cloud payload carries seconds; a consumer must not read that as years old.
+        assertTrue(BydVehicle.fresh(nowMillis / 1000L, nowMillis));
+    }
+
     @Test public void stampOfZeroIsNeverFresh() {
         assertFalse(BydVehicle.fresh(0, NOW));
     }

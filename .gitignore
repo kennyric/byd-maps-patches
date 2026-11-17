@@ -25,3 +25,4 @@ local.properties
 # Disposable CI toolchains and Python environment.
 .ci-tools/
 .venv/
+**/.cxx/
