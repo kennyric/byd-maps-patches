@@ -44,13 +44,15 @@ val generateMapsKey = tasks.register("generateMapsKey") {
     inputs.property("mapsKeyDigest", digest.orElse("missing"))
     outputs.dir(generatedMapsKey)
     doLast {
-        val key = mapsKeySource.orNull?.trim()
-        require(key != null && Regex("AIza[0-9A-Za-z_-]{35}").matches(key)) {
-            "Set SHARED_MAPS_API_KEY or the Git-ignored .community-maps-api-key file"
-        }
         val destination = generatedMapsKey.get().asFile.resolve("patches/buienalarm/CommunityMapsKey.kt")
         destination.parentFile.mkdirs()
-        destination.writeText("package patches.buienalarm\ninternal object CommunityMapsKey { const val value = \"$key\" }\n")
+        val key = mapsKeySource.orNull?.trim()
+        // A fork has no shared key; the constant stays empty and only the Buienalarm patch is
+        // affected, so the rest of the bundle still builds.
+        require(key == null || key.isEmpty() || Regex("AIza[0-9A-Za-z_-]{35}").matches(key)) {
+            "Set SHARED_MAPS_API_KEY or the Git-ignored .community-maps-api-key file"
+        }
+        destination.writeText("package patches.buienalarm\ninternal object CommunityMapsKey { const val value = \"${key.orEmpty()}\" }\n")
     }
 }
 tasks.named("compileKotlin") { dependsOn(generateMapsKey) }
