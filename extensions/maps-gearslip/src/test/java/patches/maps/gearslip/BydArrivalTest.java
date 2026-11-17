@@ -3,6 +3,8 @@ package patches.maps.gearslip;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class BydArrivalTest {
     @Test public void arrivalUsesTheCarsOwnRate() {
@@ -45,6 +47,13 @@ public class BydArrivalTest {
         assertEquals(16.09344, BydEtaText.kilometres(10, "mi"), 0.00001);
         assertEquals(10, BydEtaText.kilometres(10, "km"), 0.00001);
         assertEquals(1.5, BydEtaText.kilometres(1500, "m"), 0.00001);
+    }
+
+    @Test public void beyondRangeIsRecognised() {
+        assertTrue(BydEtaText.beyondRange(84, 90));
+        assertTrue(BydEtaText.beyondRange(84, 84));
+        assertFalse(BydEtaText.beyondRange(84, 83.9));
+        assertFalse(BydEtaText.beyondRange(0, 10));
     }
 
     @Test public void unknownUnitsAreRejected() {

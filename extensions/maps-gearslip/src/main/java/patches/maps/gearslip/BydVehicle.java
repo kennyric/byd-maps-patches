@@ -186,7 +186,9 @@ public final class BydVehicle {
                 // Never let the decoration affect Maps' own rendering.
             } finally {
                 Handler handler = mainHandler;
-                if (handler != null) handler.postDelayed(this, 1500L);
+                // 700 ms: Maps repaints the ETA card on its own schedule, so a slower tick leaves a
+                // visible gap where its text wins. The work per tick is a small view-tree walk.
+                if (handler != null) handler.postDelayed(this, 700L);
             }
         }
     };
@@ -199,47 +201,125 @@ public final class BydVehicle {
 
     public static void clearCarSurface() {
         carSurface = null;
+        TextView chip = carChip == null ? null : carChip.get();
+        if (chip != null && chip.getParent() instanceof android.view.ViewGroup) {
+            ((android.view.ViewGroup) chip.getParent()).removeView(chip);
+        }
+        carChip = null;
     }
 
-    /**
-     * The car card is drawn into Maps' own surface, where no call-site hook reaches the ETA box
-     * (class bhmg). It is decorated here instead, and re-applied on every tick because Maps
-     * repaints those lines itself.
-     */
-    private static void paintCar(View root) {
-        int level = chargeLevel();
-        if (level < 0) return;
-        paintCar(root, level);
-    }
-
-    private static void paintCar(View view, int level) {
-        if (view == null) return;
+    /** First distance in the car card ("8.5 km"), in kilometres; -1 when there is none. */
+    private static double distanceInTree(View view) {
         if (view instanceof TextView) {
-            TextView text = (TextView) view;
-            CharSequence current = text.getText();
-            if (current != null) {
-                String value = current.toString();
-                if (looksLikeEtaLine(value) && !value.endsWith(SUFFIX_TAIL + level + "%")) {
-                    text.setText(value + SUFFIX_TAIL + level + "%");
+            CharSequence text = ((TextView) view).getText();
+            if (text != null) {
+                java.util.regex.Matcher matcher = DISTANCE.matcher(text.toString());
+                if (matcher.find()) {
+                    try {
+                        double value = Double.parseDouble(matcher.group(1).replace(',', '.'));
+                        double km = BydEtaText.kilometres(value, matcher.group(2));
+                        if (km >= 0) return km;
+                    } catch (NumberFormatException unreadable) {
+                        // Keep looking.
+                    }
                 }
             }
         }
         if (view instanceof android.view.ViewGroup) {
             android.view.ViewGroup group = (android.view.ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) paintCar(group.getChildAt(i), level);
+            for (int i = 0; i < group.getChildCount(); i++) {
+                double km = distanceInTree(group.getChildAt(i));
+                if (km >= 0) return km;
+            }
+        }
+        return -1;
+    }
+
+    /** A chip of our own, so Maps never repaints the charge away. */
+    private static volatile WeakReference<TextView> carChip;
+
+    private static void paintCar(View root) {
+        if (!(root instanceof android.view.ViewGroup)) return;
+        TextView duration = findDuration(root);
+        if (duration == null) return;
+        double distance = distanceInTree(root);
+        if (distance >= 0) setRemainingKm(distance);
+        int level = chargeLevel();
+        if (level < 0) return;
+        TextView chip = ensureChip((android.view.ViewGroup) root, duration.getCurrentTextColor());
+        String label = level + "%";
+        if (!label.contentEquals(chip.getText())) chip.setText(label);
+        placeChip(chip, duration, root);
+    }
+
+    private static TextView findDuration(View view) {
+        if (view instanceof TextView) {
+            CharSequence text = ((TextView) view).getText();
+            if (text != null && looksLikeDuration(text.toString())) return (TextView) view;
+        }
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TextView found = findDuration(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private static TextView ensureChip(android.view.ViewGroup root, int color) {
+        TextView chip = carChip == null ? null : carChip.get();
+        if (chip != null && chip.getParent() == root) return chip;
+        float density = root.getResources().getDisplayMetrics().density;
+        chip = new TextView(root.getContext());
+        chip.setTextColor(color);
+        chip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f);
+        chip.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        chip.setGravity(android.view.Gravity.CENTER);
+        int horizontal = Math.round(9 * density), vertical = Math.round(3 * density);
+        chip.setPadding(horizontal, vertical, horizontal, vertical);
+        android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+        background.setColor(0xF2000000);
+        background.setCornerRadius(7 * density);
+        chip.setBackground(background);
+        try {
+            root.addView(chip, new android.view.ViewGroup.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT));
+        } catch (RuntimeException rejected) {
+            Log.w(TAG, "Battery chip could not be added", rejected);
+            return chip;
+        }
+        carChip = new WeakReference<>(chip);
+        return chip;
+    }
+
+    /** Sits just above the ETA card's top-left corner, measured from the card itself. */
+    private static void placeChip(TextView chip, TextView card, View root) {
+        try {
+            int[] cardAt = new int[2];
+            int[] rootAt = new int[2];
+            card.getLocationInWindow(cardAt);
+            root.getLocationInWindow(rootAt);
+            chip.measure(android.view.View.MeasureSpec.UNSPECIFIED, android.view.View.MeasureSpec.UNSPECIFIED);
+            float gap = chip.getResources().getDisplayMetrics().density * 6f;
+            float x = cardAt[0] - rootAt[0];
+            float y = cardAt[1] - rootAt[1] - chip.getMeasuredHeight() - gap;
+            chip.setTranslationX(Math.max(0, x));
+            chip.setTranslationY(Math.max(0, y));
+        } catch (RuntimeException unplaceable) {
+            Log.w(TAG, "Battery chip could not be placed", unplaceable);
         }
     }
 
-    /** A line that carries a route duration or distance, and no charge of ours yet. */
-    private static boolean looksLikeEtaLine(String value) {
+    /** A line carrying a route duration ("19 min", "1 hr 12 min") and no charge of ours yet. */
+    private static boolean looksLikeDuration(String value) {
         if (value.isEmpty() || value.contains(SUFFIX_TAIL)) return false;
-        if (value.length() > 40) return false;
+        if (value.length() > 24) return false;
         String lower = value.toLowerCase(java.util.Locale.ROOT);
-        boolean digit = false;
-        for (int i = 0; i < lower.length() && !digit; i++) digit = Character.isDigit(lower.charAt(i));
-        if (!digit) return false;
-        return lower.contains("min") || lower.contains("km") || lower.contains("mi")
-                || lower.contains("hr") || lower.contains("ft");
+        if (!(lower.contains("min") || lower.contains("hr") || lower.contains("h "))) return false;
+        for (int i = 0; i < lower.length(); i++) if (Character.isDigit(lower.charAt(i))) return true;
+        return false;
     }
 
     private static final String SUFFIX_TAIL = " • ";

@@ -91,6 +91,16 @@ public final class BydEtaText {
     }
 
     /**
+     * True when the route is longer than the car's remaining range, so any arrival figure would be
+     * a guess at how far short you stop rather than a charge on arrival.
+     */
+    public static boolean beyondRange(int rangeKm, double remainingKm) {
+        if (rangeKm <= 0) return false;
+        if (!Double.isFinite(remainingKm) || remainingKm < 0) return false;
+        return remainingKm >= rangeKm;
+    }
+
+    /**
      * The ETA line carrying the battery expected on arrival, or the current charge when the
      * distance is unknown. Non-navigation messages and unknown values are left untouched.
      */
