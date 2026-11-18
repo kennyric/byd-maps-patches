@@ -10,13 +10,15 @@ import org.w3c.dom.Element
  * Permissions that only serve Google-account features or Google's own data
  * collection. Maps asks for each at the moment a feature needs it, and treats a
  * permission it no longer declares the same as one the user denied.
+ *
+ * The microphone is deliberately absent: dropping it disables voice search and voice
+ * commands, which most people use more than they would miss the others.
  */
 private val PERMISSIONS = listOf(
     "android.permission.ACCESS_BACKGROUND_LOCATION",           // Location History, location sharing
     "android.permission.ACTIVITY_RECOGNITION",                 // Timeline's walk/drive detection
     "com.google.android.gms.permission.ACTIVITY_RECOGNITION",
     "android.permission.READ_CONTACTS",                        // sharing with contacts
-    "android.permission.RECORD_AUDIO",                         // voice search
     "android.permission.CAMERA",                               // Lens, Live View
     "com.google.android.gms.permission.CAR_SPEED",             // Android Auto speed reporting
     "com.google.android.gms.permission.AD_ID",                 // advertising ID
@@ -28,9 +30,10 @@ private val PERMISSIONS = listOf(
 val removePermissionsPatch = resourcePatch(
     name = "Remove permissions",
     description = "Removes permissions that only serve Google-account features or Google's data " +
-        "collection: background location, physical activity, contacts, microphone (voice search stops " +
-        "working), camera (Lens and Live View stop working), car speed, advertising ID, push messages " +
-        "and Google services settings. Left out with Add microG-RE support, whose account features need them.",
+        "collection: background location, physical activity, contacts, camera (Lens and Live View stop " +
+        "working), car speed, advertising ID, push messages and Google services settings. The microphone " +
+        "is kept so voice search and voice commands work. Left out with Add microG-RE support, whose " +
+        "account features need them.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_MAPS)
