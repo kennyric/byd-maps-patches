@@ -158,7 +158,7 @@ val microgSupportPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_MAPS)
     // A mount install keeps stock Maps' manifest, so microG never learns whom to vouch for.
     availability(AvailabilityResolver { installer, _ ->
-        if (installer == InstallerType.MOUNT) PatchAvailability.UNAVAILABLE else PatchAvailability.DISABLED
+        if (installer == InstallerType.MOUNT) PatchAvailability.UNAVAILABLE else PatchAvailability.ENABLED
     })
     // Shapes.wrap starts the microG notice (missing, or keeping the account from Maps), the
     // location-source switch reads microgPatched(), and Shapes.processStart decides where Play
