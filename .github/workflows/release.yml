@@ -125,16 +125,17 @@ jobs:
           repository="${GITHUB_REPOSITORY}"
           checksum="$(cat "dist/${file}.sha256")"
           python3 - "$version" "$file" "$repository" "$checksum" > dist/patches-bundle.json <<'PY'
-          import json, sys
+          import json, os, sys
           version, file, repo, checksum = sys.argv[1:5]
           download = f"https://github.com/{repo}/releases/download/v{version}/{file}"
+          signed = os.path.exists(f"dist/{file}.asc")
           manifest = {
               "version": version,
               "downloadUrl": download,
-              "signatureUrl": download + ".asc",
+              "signatureUrl": (download + ".asc") if signed else "",
               "checksum": checksum,
               "signatureUrlTemplate": "",
-              "publicKeyPath": "morphe-signing.pub",
+              "publicKeyPath": "morphe-signing.pub" if signed else "",
           }
           json.dump(manifest, sys.stdout, indent=2)
           print()
