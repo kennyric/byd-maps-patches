@@ -44,7 +44,14 @@ jobs:
           java-version: '21'
 
       - name: Build the bundle
-        run: ./gradlew :patches:buildAndroid --no-daemon
+        run: |
+          set -euo pipefail
+          # The bundle's own manifest is what Morphe displays as the source version, so it has to
+          # carry the version this release is named after. Leaving the checked-in value made every
+          # release report upstream's 1.91.0.
+          sed -i "s/^version = .*/version = ${{ steps.version.outputs.version }}/" gradle.properties
+          grep -E '^version = ' gradle.properties
+          ./gradlew :patches:buildAndroid --no-daemon
 
       - name: Test the BYD extension
         run: ./gradlew :extensions:maps-gearslip:testDebugUnitTest --no-daemon
@@ -136,6 +143,26 @@ jobs:
           print()
           PY
 
+      - name: Write the release notes
+        run: |
+          set -euo pipefail
+          version='${{ steps.version.outputs.version }}'
+          previous="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          {
+            echo "# BYD Maps patches v${version}"
+            echo
+            sed -n '3,200p' .github/release-notes.md
+            echo
+            echo "## Changes since ${previous:-the first release}"
+            echo
+            if [ -n "${previous}" ]; then
+              git log --no-merges --pretty='- %s (`%h`)' "${previous}"..HEAD
+            else
+              git log --no-merges --pretty='- %s (`%h`)' -20
+            fi
+          } > release-notes.md
+          cat release-notes.md
+
       - name: Publish the release
         run: |
           set -euo pipefail
@@ -146,4 +173,4 @@ jobs:
           fi
           gh release create "v${version}" dist/* \
             --title "BYD Maps patches v${version}" \
-            --notes-file .github/release-notes.md
+            --notes-file release-notes.md
