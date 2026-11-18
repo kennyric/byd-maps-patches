@@ -43,16 +43,6 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Build the bundle
-        run: |
-          set -euo pipefail
-          # The bundle's own manifest is what Morphe displays as the source version, so it has to
-          # carry the version this release is named after. Leaving the checked-in value made every
-          # release report upstream's 1.91.0.
-          sed -i "s/^version = .*/version = ${{ steps.version.outputs.version }}/" gradle.properties
-          grep -E '^version = ' gradle.properties
-          ./gradlew :patches:buildAndroid --no-daemon
-
       - name: Test the BYD extension
         run: ./gradlew :extensions:maps-gearslip:testDebugUnitTest --no-daemon
 
@@ -97,6 +87,13 @@ jobs:
         run: |
           set -euo pipefail
           version='${{ steps.version.outputs.version }}'
+          # The bundle's manifest carries gradle.properties' version, and that is what Morphe shows
+          # on the source card. Rebuild with it set, otherwise every release reports upstream's
+          # number and the artifact is named patches-.mpp.
+          sed -i "s/^version = .*/version = ${version}/" gradle.properties
+          grep -E '^version = ' gradle.properties
+          rm -f patches/build/libs/*.mpp
+          ./gradlew :patches:buildAndroid --no-daemon
           built="$(find patches/build/libs -name 'patches-*.mpp' ! -name '*sources*' ! -name '*javadoc*' | head -1)"
           if [ -z "${built}" ]; then
             echo 'No bundle was produced' >&2
