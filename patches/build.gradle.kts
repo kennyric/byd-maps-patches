@@ -11,24 +11,32 @@ tasks.named<org.gradle.api.tasks.javadoc.Javadoc>("javadoc") {
     options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PACKAGE
 }
 
-// Publish only the Spotify Android Auto control approved on 9.2.0.2053.
-// Other Spotify controls and their extension remain withdrawn from the bundle.
-val publishedSpotifySources = setOf(
-    "patches/spotify/AndroidAutoSupportPatch.kt",
-    "patches/spotify/AndroidAutoCompatibility.kt",
-)
+// Publish only Google Maps patches (and shared helpers) in this fork.
 kotlin.sourceSets.main {
     kotlin.exclude { entry ->
-        entry.path.startsWith("patches/spotify/") && entry.path !in publishedSpotifySources
+        !entry.isDirectory &&
+            entry.path.startsWith("patches/") &&
+            !entry.path.startsWith("patches/googlemaps/") &&
+            !entry.path.startsWith("patches/shared/")
     }
 }
+val testExclude: (FileTreeElement) -> Boolean = { entry ->
+    !entry.isDirectory &&
+        entry.path.startsWith("patches/") &&
+        !entry.path.startsWith("patches/googlemaps/") &&
+        entry.path != "patches/shared/CarParkedAppManifestTest.kt"
+}
+kotlin.sourceSets.test {
+    kotlin.exclude(testExclude)
+}
+sourceSets.named("test") {
+    java.exclude(testExclude)
+}
 tasks.named<org.gradle.language.jvm.tasks.ProcessResources>("processResources") {
-    exclude("extensions/spotify.mpe")
-    dependsOn(":extensions:waze:stripReleaseDebugSymbols")
-    from(project(":extensions:waze").layout.buildDirectory.dir(
-        "intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib")) {
-        into("waze/native")
-        include("arm64-v8a/libwaze_tile_cameras.so", "arm64-v8a/libshadowhook.so", "arm64-v8a/libshadowhook_nothing.so")
+    exclude { entry ->
+        entry.path.startsWith("extensions/") &&
+            entry.path != "extensions/maps.mpe" &&
+            entry.path != "extensions/maps-gearslip.mpe"
     }
 }
 
@@ -96,12 +104,12 @@ tasks.named("sourcesJar") { dependsOn(generateBrightKeyStatus) }
 
 patches {
     about {
-        name = "Dutch App Patches"
-        description = "App-specific controls for advertising, publisher promotions, tracking, onboarding and article delivery in Dutch applications"
-        source = "https://gitlab.com/johninnld/nl-morphe-patches"
-        author = "johninnl"
-        contact = "https://gitlab.com/johninnld/nl-morphe-patches/-/issues"
-        website = "https://gitlab.com/johninnld/nl-morphe-patches"
+        name = "BYD Maps Patches"
+        description = "Google Maps patches for Android Auto with BYD battery and arrival state of charge via byd-open-remote"
+        source = "https://github.com/kennyric/byd-maps-patches"
+        author = "kennyric"
+        contact = "https://github.com/kennyric/byd-maps-patches/issues"
+        website = "https://github.com/kennyric/byd-maps-patches"
         license = "GPLv3"
     }
 }

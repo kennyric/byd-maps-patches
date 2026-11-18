@@ -240,33 +240,87 @@ public final class BydVehicle {
     private static volatile WeakReference<TextView> carChip;
 
     private static void paintCar(View root) {
-        if (!(root instanceof android.view.ViewGroup)) return;
-        TextView duration = findDuration(root);
-        if (duration == null) return;
+        if (!(root instanceof android.view.ViewGroup)) {
+            hideChip();
+            return;
+        }
+        TextView duration = findEtaInBottomCard(root);
+        if (duration == null) {
+            hideChip();
+            return;
+        }
         lastNavigationAt = System.currentTimeMillis();
         double distance = distanceInTree(root);
         if (distance >= 0) setRemainingKm(distance);
         int level = chargeLevel();
-        if (level < 0) return;
+        if (level < 0) {
+            hideChip();
+            return;
+        }
         TextView chip = ensureChip((android.view.ViewGroup) root, duration);
         int current = currentCharge();
         String label = current < 0
                 ? level + "%"
                 : current == level ? current + "%" : current + "% → " + level + "%";
         if (!label.contentEquals(chip.getText())) chip.setText(label);
-        chip.setTextColor(duration.getCurrentTextColor());
+        styleChip(chip, duration, level, root.getResources().getDisplayMetrics().density);
+        chip.setVisibility(View.VISIBLE);
         placeChip(chip, duration, root);
     }
 
-    private static TextView findDuration(View view) {
-        if (view instanceof TextView) {
+    private static void hideChip() {
+        TextView chip = carChip == null ? null : carChip.get();
+        if (chip != null) chip.setVisibility(View.GONE);
+    }
+
+    private static void styleChip(TextView chip, TextView card, int level, float density) {
+        int cardText = card.getCurrentTextColor();
+        double lum = (0.299 * ((cardText >> 16) & 0xFF)
+                + 0.587 * ((cardText >> 8) & 0xFF)
+                + 0.114 * (cardText & 0xFF)) / 255.0;
+        boolean darkCard = lum > 0.5;
+        android.graphics.drawable.GradientDrawable bg =
+                chip.getBackground() instanceof android.graphics.drawable.GradientDrawable
+                        ? (android.graphics.drawable.GradientDrawable) chip.getBackground()
+                        : new android.graphics.drawable.GradientDrawable();
+        bg.setCornerRadius(999f);
+        if (darkCard) {
+            bg.setColor(0xE6202124);
+            bg.setStroke(Math.max(1, Math.round(density)), 0x33FFFFFF);
+            chip.setTextColor(level >= 30 ? 0xFFA8DAB5 : level >= 15 ? 0xFFFDD663 : 0xFFF28B82);
+        } else {
+            bg.setColor(0xF5FFFFFF);
+            bg.setStroke(Math.max(1, Math.round(density)), 0x1F000000);
+            chip.setTextColor(level >= 30 ? 0xFF137333 : level >= 15 ? 0xFFB06000 : 0xFFC5221F);
+        }
+        chip.setBackground(bg);
+    }
+
+    /**
+     * Finds the active-navigation ETA text in the bottom half of the car surface so search lists
+     * and route-preview cards (which sit in the upper half) never get an overlapping chip.
+     */
+    private static TextView findEtaInBottomCard(View root) {
+        int height = root.getHeight();
+        if (height <= 0) return null;
+        int[] rootAt = new int[2];
+        root.getLocationInWindow(rootAt);
+        return findDurationBelow(root, rootAt[1] + Math.round(height * 0.55f));
+    }
+
+    private static TextView findDurationBelow(View view, int minWindowY) {
+        if (view instanceof TextView && view.isShown()) {
             CharSequence text = ((TextView) view).getText();
-            if (text != null && looksLikeDuration(text.toString())) return (TextView) view;
+            if (text != null && looksLikeDuration(text.toString())) {
+                int[] at = new int[2];
+                view.getLocationInWindow(at);
+                if (at[1] >= minWindowY) return (TextView) view;
+            }
         }
         if (view instanceof android.view.ViewGroup) {
             android.view.ViewGroup group = (android.view.ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
-                TextView found = findDuration(group.getChildAt(i));
+                TextView found = findDurationBelow(group.getChildAt(i), minWindowY);
                 if (found != null) return found;
             }
         }
@@ -288,11 +342,11 @@ public final class BydVehicle {
         chip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textPx);
         chip.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         chip.setGravity(android.view.Gravity.CENTER);
-        int horizontal = Math.round(textPx * 0.45f), vertical = Math.round(textPx * 0.20f);
+        int horizontal = Math.round(textPx * 0.65f), vertical = Math.round(textPx * 0.25f);
         chip.setPadding(horizontal, vertical, horizontal, vertical);
+        chip.setElevation(4f * density);
         android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
-        background.setColor(0xF2000000);
-        background.setCornerRadius(textPx * 0.35f);
+        background.setCornerRadius(999f);
         chip.setBackground(background);
         try {
             root.addView(chip, new android.view.ViewGroup.LayoutParams(
@@ -314,7 +368,7 @@ public final class BydVehicle {
             card.getLocationInWindow(cardAt);
             root.getLocationInWindow(rootAt);
             chip.measure(android.view.View.MeasureSpec.UNSPECIFIED, android.view.View.MeasureSpec.UNSPECIFIED);
-            float gap = chip.getResources().getDisplayMetrics().density * 6f;
+            float gap = chip.getResources().getDisplayMetrics().density * 10f;
             float x = cardAt[0] - rootAt[0];
             float y = cardAt[1] - rootAt[1] - chip.getMeasuredHeight() - gap;
             chip.setTranslationX(Math.max(0, x));

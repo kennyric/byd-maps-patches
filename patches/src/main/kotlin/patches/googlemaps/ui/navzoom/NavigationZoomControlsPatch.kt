@@ -11,7 +11,7 @@ val navigationZoomControlsPatch = bytecodePatch(
     name = "Zoom controls in navigation",
     description = "Adds +, − and reset tiles during turn-by-turn that change the navigation zoom " +
         "while the camera keeps following the car.",
-    default = true,
+    default = false,
 ) {
     compatibleWith(COMPATIBILITY_MAPS)
     dependsOn(sharedExtensionPatch, activityContextHookPatch, navigationCameraHookPatch)

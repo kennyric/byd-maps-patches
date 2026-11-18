@@ -80,7 +80,7 @@ private val rectangleShapesResourcePatch = resourcePatch(
 val rectangleShapesPatch = bytecodePatch(
     name = "Rectangle shapes",
     description = "Squares off rounded corners across the UI, including the two round navigation buttons.",
-    default = true,
+    default = false,
 ) {
     compatibleWith(COMPATIBILITY_MAPS)
     dependsOn(sharedExtensionPatch, activityContextHookPatch, shapeShimsPatch, rectangleShapesResourcePatch)

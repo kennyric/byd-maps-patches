@@ -168,7 +168,7 @@ val blackThemePatch = bytecodePatch(
     name = "Black theme",
     description = "AMOLED-black theme. Pins Maps' own dark mode and its separate navigation colour scheme, " +
         "and remaps colour resources, drawable fills and draw-time paints so no surface is left grey.",
-    default = true,
+    default = false,
 ) {
     compatibleWith(COMPATIBILITY_MAPS)
     dependsOn(sharedExtensionPatch, activityContextHookPatch, shapeShimsPatch, blackThemeResourcePatch)
