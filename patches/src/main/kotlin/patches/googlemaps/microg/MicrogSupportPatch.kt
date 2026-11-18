@@ -153,7 +153,7 @@ val microgSupportPatch = bytecodePatch(
     name = "Add microG-RE support",
     description = "Signs in to your Google account through microG-RE (MicroG-RE or ReVanced GmsCore), " +
         "keeping the name from Change app name. Not for root installs; for original microG, use Add original microG support.",
-    default = false,
+    default = true,
 ) {
     compatibleWith(COMPATIBILITY_MAPS)
     // A mount install keeps stock Maps' manifest, so microG never learns whom to vouch for.
