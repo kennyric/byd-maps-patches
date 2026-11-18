@@ -429,18 +429,22 @@ public final class CustomizationActivity extends Activity {
             sourceRow.setOnClickListener(v->choose("Navigation data source",ExternalTelemetry.LABELS,ExternalTelemetry.sourceIndex(this),which->{ExternalTelemetry.select(this,ExternalTelemetry.SOURCES[which]);sourceSub.setText(ExternalTelemetry.LABELS[which]);nativeControls.removeAllViews();buildNativeWarningControls(nativeControls);}));
             body.addView(sourceRow);
             // How often the patched Maps asks byd-open-remote for fresher vehicle data.
-            final String[] refreshLabels={"Off","10 minutes","15 minutes","30 minutes","60 minutes"};
-            final int[] refreshValues={0,10,15,30,60};
-            int refreshMinutes=getSharedPreferences(Shapes.PREFS,MODE_PRIVATE).getInt("byd_refresh_minutes",15);
+            final String[] refreshLabels={"Off","2 minutes","5 minutes","10 minutes","15 minutes","30 minutes","60 minutes"};
+            final int[] refreshValues={0,2,5,10,15,30,60};
+            int refreshMinutes=getSharedPreferences(Shapes.PREFS,MODE_PRIVATE).getInt("byd_refresh_minutes",5);
             int refreshIndex=2;
             for(int i=0;i<refreshValues.length;i++)if(refreshValues[i]==refreshMinutes)refreshIndex=i;
             LinearLayout refreshRow=rowBase("BYD battery refresh",refreshLabels[refreshIndex]);
             TextView refreshSub=(TextView)((LinearLayout)refreshRow.getChildAt(0)).getChildAt(1);
-            final int startIndex=refreshIndex;
-            refreshRow.setOnClickListener(v->choose("BYD battery refresh",refreshLabels,startIndex,which->{
-                getSharedPreferences(Shapes.PREFS,MODE_PRIVATE).edit().putInt("byd_refresh_minutes",refreshValues[which]).apply();
-                refreshSub.setText(refreshLabels[which]);
-            }));
+            refreshRow.setOnClickListener(v->{
+                int currentVal=getSharedPreferences(Shapes.PREFS,MODE_PRIVATE).getInt("byd_refresh_minutes",5);
+                int currentIndex=2;
+                for(int i=0;i<refreshValues.length;i++)if(refreshValues[i]==currentVal)currentIndex=i;
+                choose("BYD battery refresh",refreshLabels,currentIndex,which->{
+                    getSharedPreferences(Shapes.PREFS,MODE_PRIVATE).edit().putInt("byd_refresh_minutes",refreshValues[which]).apply();
+                    refreshSub.setText(refreshLabels[which]);
+                });
+            });
             body.addView(refreshRow);
             LinearLayout current=rowBase(getResources().getConfiguration().getLocales().get(0).getLanguage().equals("nl")?"Verbindingsstatus":"Connection status",ExternalTelemetry.status());
             TextView currentSub=(TextView)((LinearLayout)current.getChildAt(0)).getChildAt(1);

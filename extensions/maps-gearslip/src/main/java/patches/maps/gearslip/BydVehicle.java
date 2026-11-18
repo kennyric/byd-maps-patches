@@ -202,6 +202,7 @@ public final class BydVehicle {
 
     public static void clearCarSurface() {
         carSurface = null;
+        lastCarSubApplied = "";
         TextView chip = carChip == null ? null : carChip.get();
         if (chip != null && chip.getParent() instanceof android.view.ViewGroup) {
             ((android.view.ViewGroup) chip.getParent()).removeView(chip);
@@ -209,35 +210,10 @@ public final class BydVehicle {
         carChip = null;
     }
 
-    /** First distance in the car card ("8.5 km"), in kilometres; -1 when there is none. */
-    private static double distanceInTree(View view) {
-        if (view instanceof TextView) {
-            CharSequence text = ((TextView) view).getText();
-            if (text != null) {
-                java.util.regex.Matcher matcher = DISTANCE.matcher(text.toString());
-                if (matcher.find()) {
-                    try {
-                        double value = Double.parseDouble(matcher.group(1).replace(',', '.'));
-                        double km = BydEtaText.kilometres(value, matcher.group(2));
-                        if (km >= 0) return km;
-                    } catch (NumberFormatException unreadable) {
-                        // Keep looking.
-                    }
-                }
-            }
-        }
-        if (view instanceof android.view.ViewGroup) {
-            android.view.ViewGroup group = (android.view.ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) {
-                double km = distanceInTree(group.getChildAt(i));
-                if (km >= 0) return km;
-            }
-        }
-        return -1;
-    }
-
-    /** A chip of our own, so Maps never repaints the charge away. */
+    private static volatile String lastCarSubApplied = "";
     private static volatile WeakReference<TextView> carChip;
+    private static final java.util.WeakHashMap<TextView, String> CLIPPED_INLINE = new java.util.WeakHashMap<>();
+    private static final java.util.regex.Pattern TIME_PATTERN = java.util.regex.Pattern.compile("[0-9]{1,2}:[0-9]{2}");
 
     private static void paintCar(View root) {
         if (!(root instanceof android.view.ViewGroup)) {
@@ -249,23 +225,194 @@ public final class BydVehicle {
             hideChip();
             return;
         }
-        lastNavigationAt = System.currentTimeMillis();
-        double distance = distanceInTree(root);
+        onNavigationFrame(root.getContext());
+        double distance = siblingDistanceKm(duration);
         if (distance >= 0) setRemainingKm(distance);
+        if (!DEMO && !fresh(timestamp, System.currentTimeMillis())) refresh(root.getContext());
         int level = chargeLevel();
         if (level < 0) {
             hideChip();
             return;
         }
-        TextView chip = ensureChip((android.view.ViewGroup) root, duration);
         int current = currentCharge();
-        String label = current < 0
+        String badge = current < 0
                 ? level + "%"
                 : current == level ? current + "%" : current + "% → " + level + "%";
-        if (!label.contentEquals(chip.getText())) chip.setText(label);
-        styleChip(chip, duration, level, root.getResources().getDisplayMetrics().density);
+        TextView arrivalLine = findEtaArrivalTimeView(duration);
+        String blockedKey = arrivalLine == null ? null : cardWidthKey(root, arrivalLine, badge);
+        if (arrivalLine != null
+                && !blockedKey.equals(CLIPPED_INLINE.get(arrivalLine))
+                && fitsInline(root, arrivalLine, SUFFIX_TAIL + badge)) {
+            allowInlineGrowth(root, arrivalLine);
+            hideChip();
+            lastCarSubApplied = appendInlineBadge(arrivalLine, badge, lastCarSubApplied);
+            android.text.Layout layout = arrivalLine.getLayout();
+            int innerW = arrivalLine.getWidth() - arrivalLine.getPaddingLeft() - arrivalLine.getPaddingRight();
+            if (layout != null && innerW > 0
+                    && (layout.getEllipsisCount(0) > 0 || layout.getLineWidth(0) > innerW + 1f)) {
+                // Remember that this width+badge clipped so we don't oscillate back and forth.
+                CLIPPED_INLINE.put(arrivalLine, blockedKey);
+                stripInlineBadge(arrivalLine);
+                lastCarSubApplied = "";
+                showChip(root, duration, badge);
+            }
+        } else {
+            if (arrivalLine != null) stripInlineBadge(arrivalLine);
+            lastCarSubApplied = "";
+            showChip(root, duration, badge);
+        }
+    }
+
+    private static String cardWidthKey(View root, TextView target, String badge) {
+        return root.getWidth() + ":" + target.getWidth() + ":" + badge;
+    }
+
+    private static void allowInlineGrowth(View root, TextView target) {
+        target.setMaxWidth(Integer.MAX_VALUE);
+        android.view.ViewGroup.LayoutParams lp = target.getLayoutParams();
+        if (lp != null && lp.width > 0) {
+            lp.width = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+            target.setLayoutParams(lp);
+        }
+        if (target.getParent() instanceof View && target.getParent() != root) {
+            View parent = (View) target.getParent();
+            android.view.ViewGroup.LayoutParams plp = parent.getLayoutParams();
+            if (plp != null && plp.width > 0) {
+                plp.width = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+                parent.setLayoutParams(plp);
+            }
+        }
+    }
+
+    private static void showChip(View root, TextView duration, String badge) {
+        TextView chip = ensureChip((android.view.ViewGroup) root, duration);
+        if (!badge.contentEquals(chip.getText())) chip.setText(badge);
+        styleChip(chip, duration, root.getResources().getDisplayMetrics().density);
         chip.setVisibility(View.VISIBLE);
         placeChip(chip, duration, root);
+    }
+
+    private static boolean fitsInline(View root, TextView target, String suffix) {
+        CharSequence raw = target.getText();
+        if (raw == null) return false;
+        String text = raw.toString();
+        int sep = text.indexOf(SUFFIX_TAIL);
+        String base = sep >= 0 ? text.substring(0, sep) : text;
+        float needed = target.getPaint().measureText(base + suffix);
+        // Walk up to the ETA card container (the widest ancestor narrower than the full car surface)
+        // so wrap_content inner rows don't under-report available width.
+        View card = target;
+        View p = target.getParent() instanceof View ? (View) target.getParent() : null;
+        int rootW = root.getWidth();
+        for (int i = 0; i < 4 && p != null && p != root; i++) {
+            if (p.getWidth() > card.getWidth() && (rootW <= 0 || p.getWidth() < rootW * 0.85f)) {
+                card = p;
+            }
+            p = p.getParent() instanceof View ? (View) p.getParent() : null;
+        }
+        int[] cardAt = new int[2];
+        int[] targetAt = new int[2];
+        card.getLocationInWindow(cardAt);
+        target.getLocationInWindow(targetAt);
+        int leftOffset = Math.max(0, targetAt[0] - cardAt[0]);
+        int available = card.getWidth() - leftOffset - card.getPaddingRight() - target.getPaddingLeft() - target.getPaddingRight();
+        float marginPx = 24f * target.getResources().getDisplayMetrics().density;
+        return available > 0 && needed + marginPx <= available;
+    }
+
+    private static void stripInlineBadge(TextView target) {
+        CharSequence raw = target.getText();
+        if (raw == null) return;
+        String text = raw.toString();
+        int sep = text.indexOf(SUFFIX_TAIL);
+        if (sep < 0) return;
+        reapplying = true;
+        try {
+            target.setText(raw.subSequence(0, sep), TextView.BufferType.SPANNABLE);
+        } finally {
+            reapplying = false;
+        }
+    }
+
+    private static final java.util.WeakHashMap<TextView, Boolean> WATCHED = new java.util.WeakHashMap<>();
+    private static boolean reapplying;
+
+    private static String appendInlineBadge(TextView target, String badge, String lastValue) {
+        watchInlineTarget(target);
+        CharSequence raw = target.getText();
+        if (raw == null || raw.length() == 0) return lastValue;
+        String text = raw.toString();
+        int sep = text.indexOf(SUFFIX_TAIL);
+        CharSequence base = sep >= 0 ? raw.subSequence(0, sep) : raw;
+        String suffix = SUFFIX_TAIL + badge;
+        String line = base.toString() + suffix;
+        if (line.equals(text) && line.equals(lastValue)) return lastValue;
+        android.text.SpannableStringBuilder ssb = new android.text.SpannableStringBuilder(base);
+        ssb.append(suffix);
+        reapplying = true;
+        try {
+            target.setText(ssb, TextView.BufferType.SPANNABLE);
+        } finally {
+            reapplying = false;
+        }
+        return line;
+    }
+
+    /** Re-appends the battery suffix synchronously whenever Maps rewrites the TextView, avoiding flicker. */
+    private static void watchInlineTarget(final TextView target) {
+        if (WATCHED.containsKey(target)) return;
+        WATCHED.put(target, Boolean.TRUE);
+        target.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
+            @Override public void afterTextChanged(android.text.Editable s) {
+                if (reapplying || s == null || s.length() == 0) return;
+                if (s.toString().contains(SUFFIX_TAIL)) return;
+                int level = chargeLevel();
+                if (level < 0) return;
+                int current = currentCharge();
+                String badge = current < 0
+                        ? level + "%"
+                        : current == level ? current + "%" : current + "% → " + level + "%";
+                View root = carSurface == null ? null : carSurface.get();
+                if (root != null && !fitsInline(root, target, SUFFIX_TAIL + badge)) return;
+                appendInlineBadge(target, badge, "");
+            }
+        });
+    }
+
+    private static TextView findEtaArrivalTimeView(TextView duration) {
+        TextView chip = carChip == null ? null : carChip.get();
+        View node = duration;
+        for (int level = 0; level < 4 && node != null; level++) {
+            android.view.ViewParent parent = node.getParent();
+            if (!(parent instanceof android.view.ViewGroup)) break;
+            TextView found = findTimeTextView((android.view.ViewGroup) parent, duration, chip, 2);
+            if (found != null) return found;
+            node = (View) parent;
+        }
+        return null;
+    }
+
+    private static TextView findTimeTextView(android.view.ViewGroup group, View duration, View chip, int depth) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child == duration || child == chip) continue;
+            if (child instanceof TextView && child.isShown()) {
+                CharSequence t = ((TextView) child).getText();
+                if (t != null) {
+                    String s = t.toString();
+                    int sep = s.indexOf(SUFFIX_TAIL);
+                    String base = sep >= 0 ? s.substring(0, sep) : s;
+                    if (TIME_PATTERN.matcher(base).find()) return (TextView) child;
+                }
+            }
+            if (depth > 0 && child instanceof android.view.ViewGroup) {
+                TextView found = findTimeTextView((android.view.ViewGroup) child, duration, chip, depth - 1);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static void hideChip() {
@@ -273,8 +420,16 @@ public final class BydVehicle {
         if (chip != null) chip.setVisibility(View.GONE);
     }
 
-    private static void styleChip(TextView chip, TextView card, int level, float density) {
-        int cardText = card.getCurrentTextColor();
+    private static void styleChip(TextView chip, TextView duration, float density) {
+        int cardText = duration.getCurrentTextColor();
+        CharSequence durText = duration.getText();
+        if (durText instanceof android.text.Spanned) {
+            android.text.style.ForegroundColorSpan[] spans = ((android.text.Spanned) durText)
+                    .getSpans(0, durText.length(), android.text.style.ForegroundColorSpan.class);
+            if (spans != null && spans.length > 0) {
+                cardText = spans[0].getForegroundColor();
+            }
+        }
         double lum = (0.299 * ((cardText >> 16) & 0xFF)
                 + 0.587 * ((cardText >> 8) & 0xFF)
                 + 0.114 * (cardText & 0xFF)) / 255.0;
@@ -287,51 +442,17 @@ public final class BydVehicle {
         if (darkCard) {
             bg.setColor(0xE6202124);
             bg.setStroke(Math.max(1, Math.round(density)), 0x33FFFFFF);
-            chip.setTextColor(level >= 30 ? 0xFFA8DAB5 : level >= 15 ? 0xFFFDD663 : 0xFFF28B82);
         } else {
             bg.setColor(0xF5FFFFFF);
             bg.setStroke(Math.max(1, Math.round(density)), 0x1F000000);
-            chip.setTextColor(level >= 30 ? 0xFF137333 : level >= 15 ? 0xFFB06000 : 0xFFC5221F);
         }
+        chip.setTextColor(cardText);
         chip.setBackground(bg);
-    }
-
-    /**
-     * Finds the active-navigation ETA text in the bottom half of the car surface so search lists
-     * and route-preview cards (which sit in the upper half) never get an overlapping chip.
-     */
-    private static TextView findEtaInBottomCard(View root) {
-        int height = root.getHeight();
-        if (height <= 0) return null;
-        int[] rootAt = new int[2];
-        root.getLocationInWindow(rootAt);
-        return findDurationBelow(root, rootAt[1] + Math.round(height * 0.55f));
-    }
-
-    private static TextView findDurationBelow(View view, int minWindowY) {
-        if (view instanceof TextView && view.isShown()) {
-            CharSequence text = ((TextView) view).getText();
-            if (text != null && looksLikeDuration(text.toString())) {
-                int[] at = new int[2];
-                view.getLocationInWindow(at);
-                if (at[1] >= minWindowY) return (TextView) view;
-            }
-        }
-        if (view instanceof android.view.ViewGroup) {
-            android.view.ViewGroup group = (android.view.ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) {
-                TextView found = findDurationBelow(group.getChildAt(i), minWindowY);
-                if (found != null) return found;
-            }
-        }
-        return null;
     }
 
     private static TextView ensureChip(android.view.ViewGroup root, TextView card) {
         TextView chip = carChip == null ? null : carChip.get();
         float density = root.getResources().getDisplayMetrics().density;
-        // Sized from the card's own text (px), so the chip follows whatever density the host
-        // renders the car surface at instead of assuming this device's sp scale.
         float textPx = Math.max(card.getTextSize() * 0.62f, 16f * density);
         if (chip != null && chip.getParent() == root) {
             if (Math.abs(chip.getTextSize() - textPx) > 0.5f) chip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textPx);
@@ -360,7 +481,6 @@ public final class BydVehicle {
         return chip;
     }
 
-    /** Sits just above the ETA card's top-left corner, measured from the card itself. */
     private static void placeChip(TextView chip, TextView card, View root) {
         try {
             int[] cardAt = new int[2];
@@ -378,6 +498,42 @@ public final class BydVehicle {
         }
     }
 
+    /**
+     * Finds the active-navigation ETA text in the bottom half of the car surface so search lists
+     * and route-preview cards (which sit in the upper half) never get matched.
+     */
+    private static TextView findEtaInBottomCard(View root) {
+        int height = root.getHeight();
+        if (height <= 0) return null;
+        int[] rootAt = new int[2];
+        root.getLocationInWindow(rootAt);
+        return findDurationBelow(root, rootAt[1] + Math.round(height * 0.55f));
+    }
+
+    private static TextView findDurationBelow(View view, int minWindowY) {
+        if (view instanceof TextView && view.isShown()) {
+            CharSequence text = ((TextView) view).getText();
+            if (text != null) {
+                String s = text.toString();
+                int sep = s.indexOf(SUFFIX_TAIL);
+                String base = sep >= 0 ? s.substring(0, sep) : s;
+                if (looksLikeDuration(base)) {
+                    int[] at = new int[2];
+                    view.getLocationInWindow(at);
+                    if (at[1] >= minWindowY) return (TextView) view;
+                }
+            }
+        }
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TextView found = findDurationBelow(group.getChildAt(i), minWindowY);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
     /** A line carrying a route duration ("19 min", "1 hr 12 min") and no charge of ours yet. */
     private static boolean looksLikeDuration(String value) {
         if (value.isEmpty() || value.contains(SUFFIX_TAIL)) return false;
@@ -392,7 +548,7 @@ public final class BydVehicle {
 
     /** How often Maps asks the app for fresher data; the app debounces independently. */
     /** Default refresh interval; the Customization screen ("BYD battery refresh") overrides it. */
-    private static final int POKE_DEFAULT_MINUTES = 15;
+    private static final int POKE_DEFAULT_MINUTES = 5;
     private static final String PREFS = "ungoogled_ui";
     private static final String PREF_REFRESH_MINUTES = "byd_refresh_minutes";
     private static volatile long lastPokeAt;
@@ -403,11 +559,25 @@ public final class BydVehicle {
      * Asks byd-open-remote to refresh from the cloud. Without this the card can show nothing until
      * the app is opened by hand, because its own sync is on a long, user-configurable interval.
      */
+    /** Marks navigation active and immediately triggers a fetch when navigation just started. */
+    private static void onNavigationFrame(Context context) {
+        long now = System.currentTimeMillis();
+        boolean justStarted = lastNavigationAt == 0 || now - lastNavigationAt > NAVIGATION_WINDOW_MS;
+        lastNavigationAt = now;
+        if (justStarted) {
+            poke(context, true);
+        }
+    }
+
     private static void maybePoke() {
+        poke(appContext(), false);
+    }
+
+    private static void poke(Context context, boolean force) {
         long now = System.currentTimeMillis();
         // Only while navigating: browsing the map must never cost a cloud request.
         if (now - lastNavigationAt > NAVIGATION_WINDOW_MS) return;
-        android.content.Context context = appContext();
+        if (context == null) context = appContext();
         if (context == null) return;
         int minutes;
         try {
@@ -417,14 +587,14 @@ public final class BydVehicle {
             minutes = POKE_DEFAULT_MINUTES;
         }
         if (minutes <= 0) return;
-        // First poke of a trip is immediate, so the card is right from the start.
-        if (lastPokeAt != 0 && now - lastPokeAt < minutes * 60_000L) return;
+        // First poke of a trip (or when navigation just started) is immediate.
+        if (!force && lastPokeAt != 0 && now - lastPokeAt < minutes * 60_000L) return;
         lastPokeAt = now;
         try {
             android.content.Intent intent = new android.content.Intent(ACTION_REQUEST_REFRESH);
             intent.setPackage(AUTHORITY_PACKAGE);
             context.sendBroadcast(intent);
-            Log.i(TAG, "poke -> " + AUTHORITY_PACKAGE);
+            Log.i(TAG, "poke -> " + AUTHORITY_PACKAGE + (force ? " (nav-start)" : ""));
         } catch (RuntimeException ignored) {
             // A poke is an optimisation; the provider stays the source of truth.
         }
@@ -460,8 +630,7 @@ public final class BydVehicle {
                     java.util.regex.Matcher matcher = DISTANCE.matcher(text.toString());
                     if (matcher.find()) {
                         try {
-                            double value = Double.parseDouble(matcher.group(1).replace(',', '.'));
-                            double km = BydEtaText.kilometres(value, matcher.group(2));
+                            double km = BydEtaText.kilometres(parseDistanceNumber(matcher.group(1)), matcher.group(2));
                             if (km >= 0) return km;
                         } catch (NumberFormatException unreadable) {
                             // Keep looking at the other texts in the row.
@@ -477,9 +646,20 @@ public final class BydVehicle {
         return -1;
     }
 
+    /** Parses "1,397" / "1,397.5" and "1.397" / "1.397,5" (both thousands styles) as well as "5,2" / "5.2". */
+    static double parseDistanceNumber(String raw) {
+        if (raw.matches("[0-9]{1,3}(?:,[0-9]{3})+(?:\\.[0-9]+)?")) {
+            return Double.parseDouble(raw.replace(",", ""));
+        }
+        if (raw.matches("[0-9]{1,3}(?:\\.[0-9]{3})+(?:,[0-9]+)?")) {
+            return Double.parseDouble(raw.replace(".", "").replace(',', '.'));
+        }
+        return Double.parseDouble(raw.replace(',', '.'));
+    }
+
     /** A distance with its unit, as Maps writes it into the navigation strip. */
     private static final java.util.regex.Pattern DISTANCE = java.util.regex.Pattern.compile(
-            "([0-9]+(?:[.,][0-9]+)?)\\s*(mi|km|m|ft|miles|mile|kilometres|kilometers|kilometre|kilometer|feet|foot)\\b",
+            "([0-9]+(?:[.,][0-9]{3})*(?:[.,][0-9]+)?)\\s*(mi|km|m|ft|miles|mile|kilometres|kilometers|kilometre|kilometer|feet|foot)\\b",
             java.util.regex.Pattern.CASE_INSENSITIVE);
 
     private static void paint(android.app.Activity activity) {
@@ -488,7 +668,7 @@ public final class BydVehicle {
         if (id == 0) return;
         TextView view = activity.findViewById(id);
         if (view == null) return;
-        lastNavigationAt = System.currentTimeMillis();
+        onNavigationFrame(activity.getApplicationContext());
         CharSequence current = view.getText();
         if (current == null || current.length() == 0) return;
         String text = current.toString();
@@ -500,10 +680,27 @@ public final class BydVehicle {
         if (!DEMO && !fresh(timestamp, System.currentTimeMillis())) refresh(activity.getApplicationContext());
         int level = chargeLevel();
         if (level < 0) return;
-        // "19 min • 47%": the expected charge, as text, in Maps' own line.
-        String line = text + " • " + level + "%";
+        // "19 min • 47%": preserve Maps' own traffic-colour spans on the duration, and tint the
+        // battery suffix separately.
+        String suffix = " • " + level + "%";
+        String line = text + suffix;
         lastApplied = line;
-        view.setText(line);
+        android.text.SpannableStringBuilder ssb = new android.text.SpannableStringBuilder(current);
+        int start = ssb.length();
+        ssb.append(suffix);
+        ssb.setSpan(new android.text.style.ForegroundColorSpan(socColor(view, level)),
+                start, ssb.length(), android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        view.setText(ssb, TextView.BufferType.SPANNABLE);
+    }
+
+    private static int socColor(TextView card, int level) {
+        int cardText = card.getCurrentTextColor();
+        double lum = (0.299 * ((cardText >> 16) & 0xFF)
+                + 0.587 * ((cardText >> 8) & 0xFF)
+                + 0.114 * (cardText & 0xFF)) / 255.0;
+        boolean darkCard = lum > 0.5;
+        if (darkCard) return level >= 30 ? 0xFFA8DAB5 : level >= 15 ? 0xFFFDD663 : 0xFFF28B82;
+        return level >= 30 ? 0xFF137333 : level >= 15 ? 0xFFB06000 : 0xFFC5221F;
     }
 
     /** The charge the car reports right now; -1 when nothing fresh is known. */
