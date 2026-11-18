@@ -12,9 +12,9 @@ Forked from [nl-morphe-patches](https://gitlab.com/johninnld/nl-morphe-patches) 
 1. Install **[Morphe Manager](https://morphe.software/)**.
 2. Add this repository as a patch source (either method):
    - **One-tap**: Open `https://morphe.software/add-source?github=kennyric/byd-maps-patches` on your phone.
-   - **Manual**: In Morphe Manager → **Settings → Sources → Add**, paste:
+   - **Manual**: Switch to the **Sources** tab, tap **`+`**, and paste:
      ```
-     https://github.com/kennyric/byd-maps-patches/releases/latest/download/patches-bundle.json
+     https://github.com/kennyric/byd-maps-patches
      ```
 3. Download **Google Maps `26.44.06.1006895251`** (versionCode `1068856906`, `minSdk 29`) from APKMirror.
 4. In Morphe Manager, select the Google Maps APK, keep the default patches (which include **`BYD battery and range in the navigation card`** and **`Native navigation for any Android Auto host`**), and patch.
