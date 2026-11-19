@@ -44,6 +44,14 @@ java -jar morphe-desktop-2.2.0-all.jar patch \
 4. On the phone, open **Settings → Android Auto → Customize launcher** and enable **Ungoogled Maps**. If it is still missing, force-stop `com.google.android.projection.gearhead` or reconnect the phone.
 5. Install every future patched update through KingInstaller too — a normal install can change the recorded installer again.
 
+### Already patched and installed?
+
+If the patched app already runs on the phone but never appears in Android Auto, reinstall it through KingInstaller. You do not need to unpatch or start over:
+
+1. Use the patched APK you installed. If you no longer have it, patch the same original Google Maps version again in Morphe — with the same Morphe signing key, the result installs over the existing app as an update.
+2. Open KingInstaller, select that patched APK, and tap **Install** with no switches enabled. Confirm **Update** when Android asks.
+3. If KingInstaller reports a signature conflict, the installed copy was signed with a different key. Uninstall that copy first (this deletes its app data), then install the patched APK through KingInstaller again.
+
 ---
 
 ## How the BYD Battery Pill Works
