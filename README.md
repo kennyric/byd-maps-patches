@@ -18,9 +18,7 @@ Forked from [nl-morphe-patches](https://gitlab.com/johninnld/nl-morphe-patches) 
      ```
 3. Select **Google Maps** in Morphe Manager and follow its prompt to fetch the matching original app.
    Morphe knows this bundle is pinned to **Google Maps `26.44.06.1006895251`** (versionCode `1068856906`, `minSdk 29`) and guides you to that exact build, so you do not need to hunt for it on APKMirror yourself.
-4. Keep the default patches (which include **`BYD battery and range in the navigation card`** and **`Native navigation for any Android Auto host`**), and patch.
-   - *Optional*: Enable **`Add microG-RE support`** if you want Google account sign-in via MicroG-RE (package becomes `org.ungoogled.android.apps.maps.microg`).
-   - *Material You*: `Black theme`, `Rectangle shapes`, and `Zoom controls in navigation` are **off by default** so Maps keeps its rounded Material You look.
+4. Tap **Patch** and keep the defaults — the BYD battery and Android Auto patches are already selected.
 5. **Reinstall the patched APK through KingInstaller** before using it in the car — see [Android Auto setup](#android-auto--byd-open-remote-setup). A normal install works on the phone, but Android Auto only lists navigation apps that were installed as if from Google Play.
 
 ### Option 2 — Morphe Desktop CLI (on PC)
