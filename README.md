@@ -32,17 +32,17 @@ java -jar morphe-desktop-2.2.0-all.jar patch \
 
 ---
 
-## Android Auto & `byd-open-remote` Setup
+## Android Auto & BYD Open Remote Setup
 
-1. **Install `byd-open-remote` (`≥ 1.1.0`)** on your phone and sign in to your BYD account.
-   - If you enabled `Add microG-RE support`, set the target package in `byd-open-remote` to `org.ungoogled.android.apps.maps.microg` (otherwise the default `org.ungoogled.android.apps.maps` matches).
-2. **Install [KingInstaller](https://github.com/fcaronte/KingInstaller/releases/latest)** on the phone. Its basic (non-root) mode is enough — **you do not need Shizuku**.
-3. **Reinstall the patched Maps APK through KingInstaller.** In Morphe's finished patching screen tap **Install** and choose **KingInstaller**. Use its classic mode: select the APK and tap **Install** without enabling any switches.
-   - If KingInstaller is not offered in the chooser, export the patched APK from Morphe, open KingInstaller, select that APK, and install it from there.
-   - This step is what makes Android Auto list the app: KingInstaller records Google Play Store as the installer, while a normal install records Morphe or your file manager and Android Auto hides the app.
+1. **Install [BYD Open Remote](https://github.com/kennyric/byd-open-remote/releases/latest) (`≥ 1.1.0`)** on your phone and sign in with your BYD account.
+   - If you patched with `Add microG-RE support`, set BYD Open Remote's target package to `org.ungoogled.android.apps.maps.microg`. Otherwise leave the default `org.ungoogled.android.apps.maps`.
+2. **Install [KingInstaller](https://github.com/fcaronte/KingInstaller/releases/latest)** on the phone — download the `.apk` from **Assets**, not the source code. Its classic, non-root method is all you need; **no Shizuku**.
+3. **Install the patched Maps APK through KingInstaller.** In Morphe's finished patching screen, tap **Install**, choose **KingInstaller**, and let it install with no switches enabled.
+   - If KingInstaller is not offered, export the patched APK from Morphe, open KingInstaller, select that APK, and install it there.
+   - **Why this matters:** Android Auto only lists navigation apps installed as if from Google Play. KingInstaller records the Play Store as the installer; a normal install records Morphe or your file manager, so Maps stays hidden.
    - ADB alternative: `adb install -i com.android.vending -r maps-byd.apk`
-4. Open phone **Settings → Android Auto → Customize launcher** and enable **Ungoogled Maps**. If it is still missing, force-stop `com.google.android.projection.gearhead` or unplug and replug the phone.
-5. Repeat the KingInstaller reinstall after every patched update — a normal install can change the recorded installer again.
+4. On the phone, open **Settings → Android Auto → Customize launcher** and enable **Ungoogled Maps**. If it is still missing, force-stop `com.google.android.projection.gearhead` or reconnect the phone.
+5. Install every future patched update through KingInstaller too — a normal install can change the recorded installer again.
 
 ---
 
