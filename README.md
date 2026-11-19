@@ -38,14 +38,13 @@ java -jar morphe-desktop-2.2.0-all.jar patch \
 
 1. **Install `byd-open-remote` (`≥ 1.1.0`)** on your phone and sign in to your BYD account.
    - If you enabled `Add microG-RE support`, set the target package in `byd-open-remote` to `org.ungoogled.android.apps.maps.microg` (otherwise the default `org.ungoogled.android.apps.maps` matches).
-2. **Install [KingInstaller](https://github.com/fcaronte/KingInstaller/releases/latest) and [Shizuku(-Next)](https://github.com/rushiranpise/Shizuku-Next/releases/latest)** on the phone. Root is not required.
-3. **Start Shizuku**, then open KingInstaller, enable its **Shizuku** switch, and allow the access prompt. Leave **Root** off.
-4. **Reinstall the patched Maps APK through KingInstaller.** In Morphe's finished patching screen tap **Install**, choose **KingInstaller**, then tap **Install as king**.
-   - If KingInstaller is not offered in the chooser, export the patched APK from Morphe, open KingInstaller, select that APK, and continue with **Install as king**.
+2. **Install [KingInstaller](https://github.com/fcaronte/KingInstaller/releases/latest)** on the phone. Its basic (non-root) mode is enough — **you do not need Shizuku**.
+3. **Reinstall the patched Maps APK through KingInstaller.** In Morphe's finished patching screen tap **Install** and choose **KingInstaller**. Use its classic mode: select the APK and tap **Install** without enabling any switches.
+   - If KingInstaller is not offered in the chooser, export the patched APK from Morphe, open KingInstaller, select that APK, and install it from there.
    - This step is what makes Android Auto list the app: KingInstaller records Google Play Store as the installer, while a normal install records Morphe or your file manager and Android Auto hides the app.
    - ADB alternative: `adb install -i com.android.vending -r maps-byd.apk`
-5. Open phone **Settings → Android Auto → Customize launcher** and enable **Ungoogled Maps**. If it is still missing, force-stop `com.google.android.projection.gearhead` or unplug and replug the phone.
-6. Repeat the KingInstaller reinstall after every patched update — a normal install can change the recorded installer again.
+4. Open phone **Settings → Android Auto → Customize launcher** and enable **Ungoogled Maps**. If it is still missing, force-stop `com.google.android.projection.gearhead` or unplug and replug the phone.
+5. Repeat the KingInstaller reinstall after every patched update — a normal install can change the recorded installer again.
 
 ---
 
