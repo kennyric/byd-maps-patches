@@ -253,11 +253,9 @@ public final class BydVehicle {
             return;
         }
         int current = currentCharge();
-        String badge = current < 0
-                ? level + "%"
-                : current == level ? current + "%" : current + "% → " + level + "%";
+        CharSequence badge = badgeText(duration, current, level);
         TextView arrivalLine = findEtaArrivalTimeView(duration);
-        String blockedKey = arrivalLine == null ? null : cardWidthKey(root, arrivalLine, badge);
+        String blockedKey = arrivalLine == null ? null : cardWidthKey(root, arrivalLine, badge.toString());
         if (arrivalLine != null
                 && !blockedKey.equals(CLIPPED_INLINE.get(arrivalLine))
                 && fitsInline(root, arrivalLine, SUFFIX_TAIL + badge)) {
@@ -285,6 +283,64 @@ public final class BydVehicle {
         return root.getWidth() + ":" + target.getWidth() + ":" + badge;
     }
 
+    /**
+     * "32% → 27%" with the arrow drawn instead of typed. The fallback font puts U+2192 on the
+     * baseline, which reads low against the digits in the car card, so the arrow is an ImageSpan
+     * centred on the text's midline.
+     */
+    static CharSequence badgeText(TextView target, int current, int level) {
+        if (current < 0) return level + "%";
+        if (current == level) return current + "%";
+        String plain = current + "%\u2009\uFFFC\u2009" + level + "%";
+        android.text.SpannableString text = new android.text.SpannableString(plain);
+        int at = plain.indexOf('\uFFFC');
+        if (at >= 0 && target != null) {
+            int size = Math.max(1, Math.round(target.getTextSize() * 0.62f));
+            text.setSpan(new android.text.style.ImageSpan(
+                            new ArrowDrawable(target.getCurrentTextColor(), size),
+                            "\uFFFC", android.text.style.ImageSpan.ALIGN_CENTER),
+                    at, at + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return text;
+    }
+
+    /** A right arrow drawn with strokes, so its centre is the text's centre, not the baseline. */
+    private static final class ArrowDrawable extends android.graphics.drawable.Drawable {
+        private final android.graphics.Paint paint =
+                new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final int size;
+
+        ArrowDrawable(int color, int sizePx) {
+            this.size = sizePx;
+            paint.setColor(color);
+            paint.setStyle(android.graphics.Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(1f, sizePx * 0.14f));
+            paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+            paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+        }
+
+        @Override public int getIntrinsicWidth() { return size; }
+        @Override public int getIntrinsicHeight() { return size; }
+
+        @Override public void draw(android.graphics.Canvas canvas) {
+            float w = size;
+            float h = size;
+            float left = w * 0.10f;
+            float right = w * 0.90f;
+            float mid = h / 2f;
+            float head = w * 0.28f;
+            canvas.drawLine(left, mid, right, mid, paint);
+            canvas.drawLine(right - head, mid - head * 0.62f, right, mid, paint);
+            canvas.drawLine(right - head, mid + head * 0.62f, right, mid, paint);
+        }
+
+        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
+        @Override public void setColorFilter(android.graphics.ColorFilter colorFilter) {
+            paint.setColorFilter(colorFilter);
+        }
+        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
+    }
+
     private static void allowInlineGrowth(View root, TextView target) {
         target.setMaxWidth(Integer.MAX_VALUE);
         android.view.ViewGroup.LayoutParams lp = target.getLayoutParams();
@@ -302,21 +358,21 @@ public final class BydVehicle {
         }
     }
 
-    private static void showChip(View root, TextView duration, String badge) {
+    private static void showChip(View root, TextView duration, CharSequence badge) {
         TextView chip = ensureChip((android.view.ViewGroup) root, duration);
-        if (!badge.contentEquals(chip.getText())) chip.setText(badge);
+        if (!android.text.TextUtils.equals(badge, chip.getText())) chip.setText(badge);
         styleChip(chip, duration, root.getResources().getDisplayMetrics().density);
         chip.setVisibility(View.VISIBLE);
         placeChip(chip, duration, root);
     }
 
-    private static boolean fitsInline(View root, TextView target, String suffix) {
+    private static boolean fitsInline(View root, TextView target, CharSequence suffix) {
         CharSequence raw = target.getText();
         if (raw == null) return false;
         String text = raw.toString();
         int sep = text.indexOf(SUFFIX_TAIL);
         String base = sep >= 0 ? text.substring(0, sep) : text;
-        float needed = target.getPaint().measureText(base + suffix);
+        float needed = target.getPaint().measureText(base + suffix.toString());
         // Walk up to the ETA card container (the widest ancestor narrower than the full car surface)
         // so wrap_content inner rows don't under-report available width.
         View card = target;
@@ -355,7 +411,7 @@ public final class BydVehicle {
     private static final java.util.WeakHashMap<TextView, Boolean> WATCHED = new java.util.WeakHashMap<>();
     private static boolean reapplying;
 
-    private static String appendInlineBadge(TextView target, String badge, String lastValue) {
+    private static String appendInlineBadge(TextView target, CharSequence badge, String lastValue) {
         watchInlineTarget(target);
         CharSequence raw = target.getText();
         if (raw == null || raw.length() == 0) return lastValue;
@@ -366,7 +422,8 @@ public final class BydVehicle {
         String line = base.toString() + suffix;
         if (line.equals(text) && line.equals(lastValue)) return lastValue;
         android.text.SpannableStringBuilder ssb = new android.text.SpannableStringBuilder(base);
-        ssb.append(suffix);
+        ssb.append(SUFFIX_TAIL);
+        ssb.append(badge);
         reapplying = true;
         try {
             target.setText(ssb, TextView.BufferType.SPANNABLE);
@@ -389,9 +446,7 @@ public final class BydVehicle {
                 int level = chargeLevel();
                 if (level < 0) return;
                 int current = currentCharge();
-                String badge = current < 0
-                        ? level + "%"
-                        : current == level ? current + "%" : current + "% → " + level + "%";
+                CharSequence badge = badgeText(target, current, level);
                 View root = carSurface == null ? null : carSurface.get();
                 if (root != null && !fitsInline(root, target, SUFFIX_TAIL + badge)) return;
                 appendInlineBadge(target, badge, "");
