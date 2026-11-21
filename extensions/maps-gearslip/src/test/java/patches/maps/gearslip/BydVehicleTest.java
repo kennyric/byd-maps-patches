@@ -40,6 +40,24 @@ public class BydVehicleTest {
         assertTrue(BydVehicle.fresh(NOW - BydVehicle.MAX_AGE_MS + 1, NOW));
     }
 
+    @Test public void routeProgressAccumulatesWhileTheRemainingDistanceFalls() {
+        BydVehicle.setRemainingKm(30);
+        BydVehicle.setRemainingKm(24);
+        BydVehicle.setRemainingKm(24);
+        BydVehicle.setRemainingKm(18.5);
+
+        assertEquals(11.5, BydVehicle.travelledKm(), 0.001);
+    }
+
+    @Test public void aRerouteDiscardsTheOldProgress() {
+        BydVehicle.setRemainingKm(30);
+        BydVehicle.setRemainingKm(24);
+        assertEquals(6, BydVehicle.travelledKm(), 0.001);
+
+        BydVehicle.setRemainingKm(35);
+        assertEquals(0, BydVehicle.travelledKm(), 0.001);
+    }
+
     @Test public void outOfRangeSocIsRejected() {
         BydVehicle.onStatus(140, 310, System.currentTimeMillis(), "km");
         assertEquals("17 min", BydVehicle.decorate("17 min"));

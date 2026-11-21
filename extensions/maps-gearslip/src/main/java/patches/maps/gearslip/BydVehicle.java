@@ -61,6 +61,10 @@ public final class BydVehicle {
     private static volatile long lastQueryAt;
     /** Remaining route distance in kilometres, -1 when the navigation strip could not be read. */
     private static volatile double remainingKm = -1;
+    /** Distance driven since the last reading the app could confirm, capped for sanity. */
+    private static volatile double travelledKm;
+    private static volatile double lastRemainingForTrip = -1;
+    private static final double MAX_TRAVELLED_KM = 500d;
     /** Maps' own car surface, set by the projection renderer while a host is attached. */
     private static volatile WeakReference<View> carSurface;
 
@@ -83,7 +87,21 @@ public final class BydVehicle {
 
     /** Remaining route distance, in kilometres, as last read from the navigation strip. */
     static void setRemainingKm(double value) {
+        if (!Double.isFinite(value) || value < 0) return;
         remainingKm = value;
+        double previous = lastRemainingForTrip;
+        if (previous >= 0 && value <= previous) {
+            travelledKm = Math.min(MAX_TRAVELLED_KM, travelledKm + (previous - value));
+        } else if (previous >= 0) {
+            // Remaining distance grew: a reroute or a new trip. Old progress no longer applies.
+            travelledKm = 0;
+        }
+        lastRemainingForTrip = value;
+    }
+
+    /** Distance driven since the last confirmed reading; sent to the app with every refresh. */
+    static double travelledKm() {
+        return travelledKm;
     }
 
     /**
@@ -565,6 +583,9 @@ public final class BydVehicle {
         boolean justStarted = lastNavigationAt == 0 || now - lastNavigationAt > NAVIGATION_WINDOW_MS;
         lastNavigationAt = now;
         if (justStarted) {
+            // Fresh trip: only progress measured after this frame belongs to the next reading.
+            travelledKm = 0;
+            lastRemainingForTrip = remainingKm;
             poke(context, true);
         }
     }
@@ -590,14 +611,50 @@ public final class BydVehicle {
         // First poke of a trip (or when navigation just started) is immediate.
         if (!force && lastPokeAt != 0 && now - lastPokeAt < minutes * 60_000L) return;
         lastPokeAt = now;
+        final double distance = travelledKm;
+        final Context app = context.getApplicationContext() != null
+                ? context.getApplicationContext() : context;
+        try {
+            // Off the UI thread: the call may start byd-open-remote's process on a cold start.
+            QUERIES.execute(() -> {
+                if (!askForRefresh(app, distance)) return;
+                // The app has the gap; a new reading (or its estimate) anchors the next one.
+                travelledKm = 0;
+                lastRemainingForTrip = remainingKm;
+                query(app);
+            });
+        } catch (RuntimeException rejected) {
+            Log.w(TAG, "poke rejected", rejected);
+        }
+    }
+
+    /**
+     * Asks byd-open-remote for a refresh and hands it the distance driven since the last reading.
+     * Uses {@code ContentResolver.call}, which identifies the caller on every Android version;
+     * the broadcast fallback exists only for app builds that predate the distance extra.
+     */
+    private static boolean askForRefresh(Context context, double distanceKm) {
+        try {
+            android.os.Bundle extras = new android.os.Bundle();
+            extras.putDouble("distance_km", distanceKm);
+            android.os.Bundle reply = context.getContentResolver()
+                    .call(statusUri(), "refresh", null, extras);
+            if (reply != null && reply.getBoolean("requested", false)) {
+                Log.i(TAG, "poke -> " + AUTHORITY_PACKAGE + " distance=" + distanceKm + "km");
+                return true;
+            }
+        } catch (RuntimeException unavailable) {
+            Log.w(TAG, "provider call failed, falling back to broadcast", unavailable);
+        }
         try {
             android.content.Intent intent = new android.content.Intent(ACTION_REQUEST_REFRESH);
             intent.setPackage(AUTHORITY_PACKAGE);
             context.sendBroadcast(intent);
-            Log.i(TAG, "poke -> " + AUTHORITY_PACKAGE + (force ? " (nav-start)" : ""));
+            Log.i(TAG, "poke (broadcast) -> " + AUTHORITY_PACKAGE);
         } catch (RuntimeException ignored) {
             // A poke is an optimisation; the provider stays the source of truth.
         }
+        return false;
     }
 
     /** How recently the navigation UI must have been seen for a poke to be allowed. */
@@ -781,5 +838,7 @@ public final class BydVehicle {
         unit = "km";
         lastQueryAt = 0;
         remainingKm = -1;
+        travelledKm = 0;
+        lastRemainingForTrip = -1;
     }
 }
