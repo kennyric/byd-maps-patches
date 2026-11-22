@@ -252,8 +252,7 @@ public final class BydVehicle {
             hideChip();
             return;
         }
-        int current = currentCharge();
-        CharSequence badge = badgeText(duration, current, level);
+        CharSequence badge = badgeText(level);
         TextView arrivalLine = findEtaArrivalTimeView(duration);
         String blockedKey = arrivalLine == null ? null : cardWidthKey(root, arrivalLine, badge.toString());
         if (arrivalLine != null
@@ -283,41 +282,9 @@ public final class BydVehicle {
         return root.getWidth() + ":" + target.getWidth() + ":" + badge;
     }
 
-    /**
-     * "32% → 27%" with a raised arrow, always showing both ends so the badge reads the same when
-     * the trip costs nothing. Unknown current charge falls back to the arrival only.
-     */
-    static CharSequence badgeText(TextView target, int current, int level) {
-        if (level < 0) return current >= 0 ? current + "%" : "";
-        if (current < 0) return level + "%";
-        String plain = current + "%\u2009\u2192\u2009" + level + "%";
-        android.text.SpannableString text = new android.text.SpannableString(plain);
-        int at = plain.indexOf('\u2192');
-        if (at >= 0) {
-            text.setSpan(new CenteredArrowSpan(), at, at + 1,
-                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        return text;
-    }
-
-    /**
-     * Draws the arrow with the TextView's own paint (same size, colour and typeface) and lifts it
-     * by a fraction of the text size so it sits on the digits' optical centre instead of the
-     * baseline.
-     */
-    static final class CenteredArrowSpan extends android.text.style.ReplacementSpan {
-        private static final float LIFT_EM = 0.06f;
-
-        @Override public int getSize(android.graphics.Paint paint, CharSequence text,
-                                     int start, int end, android.graphics.Paint.FontMetricsInt fm) {
-            return (int) Math.ceil(paint.measureText("\u2192"));
-        }
-
-        @Override public void draw(android.graphics.Canvas canvas, CharSequence text,
-                                   int start, int end, float x, int top, int y, int bottom,
-                                   android.graphics.Paint paint) {
-            canvas.drawText("\u2192", x, y - paint.getTextSize() * LIFT_EM, paint);
-        }
+    /** Arrival charge only, e.g. "57%". The native automotive card also carries the battery icon. */
+    static CharSequence badgeText(int level) {
+        return level < 0 ? "" : level + "%";
     }
 
     private static void allowInlineGrowth(View root, TextView target) {
@@ -424,8 +391,7 @@ public final class BydVehicle {
                 if (s.toString().contains(SUFFIX_TAIL)) return;
                 int level = chargeLevel();
                 if (level < 0) return;
-                int current = currentCharge();
-                CharSequence badge = badgeText(target, current, level);
+                CharSequence badge = badgeText(level);
                 View root = carSurface == null ? null : carSurface.get();
                 if (root != null && !fitsInline(root, target, SUFFIX_TAIL + badge)) return;
                 appendInlineBadge(target, badge, "");
@@ -771,9 +737,9 @@ public final class BydVehicle {
         if (!DEMO && !fresh(timestamp, System.currentTimeMillis())) refresh(activity.getApplicationContext());
         int level = chargeLevel();
         if (level < 0) return;
-        // "19 min • 87% → 84%": preserve Maps' own traffic-colour spans on the duration, and tint
-        // the battery suffix separately.
-        CharSequence badge = badgeText(view, currentCharge(), level);
+        // "19 min • 84%": keep Maps' own traffic-colour spans on the duration and append the
+        // arrival charge only, matching the native automotive card.
+        CharSequence badge = badgeText(level);
         String suffix = " • " + badge;
         String line = text + suffix;
         lastApplied = line;
@@ -794,13 +760,6 @@ public final class BydVehicle {
         boolean darkCard = lum > 0.5;
         if (darkCard) return level >= 30 ? 0xFFA8DAB5 : level >= 15 ? 0xFFFDD663 : 0xFFF28B82;
         return level >= 30 ? 0xFF137333 : level >= 15 ? 0xFFB06000 : 0xFFC5221F;
-    }
-
-    /** The charge the car reports right now; -1 when nothing fresh is known. */
-    static int currentCharge() {
-        if (DEMO) return 62;
-        if (!fresh(timestamp, System.currentTimeMillis())) return -1;
-        return soc;
     }
 
     /** Expected charge on arrival, or the current charge when the distance is unknown; -1 for none. */

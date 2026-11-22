@@ -36,7 +36,7 @@ public class BydBadgeRenderTest {
         view.setTextSize(18f);
         view.setTextColor(0xFF137333);
         view.setIncludeFontPadding(false);
-        view.setText(BydVehicle.badgeText(view, 86, 85));
+        view.setText(BydVehicle.badgeText(85));
         view.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.AT_MOST),
                 View.MeasureSpec.makeMeasureSpec(200, View.MeasureSpec.AT_MOST));
         view.layout(0, 0, view.getMeasuredWidth(), view.getMeasuredHeight());
@@ -59,7 +59,7 @@ public class BydBadgeRenderTest {
             }
         }
         assertTrue("badge rendered no ink: " + out.getAbsolutePath(), ink > 50);
-        assertEquals("86%\u2009\u2192\u200985%", view.getText().toString());
+        assertEquals("85%", view.getText().toString());
     }
 
     private static boolean isNearWhite(int color) {
