@@ -284,13 +284,12 @@ public final class BydVehicle {
     }
 
     /**
-     * "32% → 27%" with a raised arrow. The fallback font puts U+2192 on the baseline, so a span
-     * that draws it a little higher keeps it optically centred; a custom drawable was too thin to
-     * read on the head-unit surface.
+     * "32% → 27%" with a raised arrow, always showing both ends so the badge reads the same when
+     * the trip costs nothing. Unknown current charge falls back to the arrival only.
      */
     static CharSequence badgeText(TextView target, int current, int level) {
+        if (level < 0) return current >= 0 ? current + "%" : "";
         if (current < 0) return level + "%";
-        if (current == level) return current + "%";
         String plain = current + "%\u2009\u2192\u2009" + level + "%";
         android.text.SpannableString text = new android.text.SpannableString(plain);
         int at = plain.indexOf('\u2192');
@@ -772,14 +771,16 @@ public final class BydVehicle {
         if (!DEMO && !fresh(timestamp, System.currentTimeMillis())) refresh(activity.getApplicationContext());
         int level = chargeLevel();
         if (level < 0) return;
-        // "19 min • 47%": preserve Maps' own traffic-colour spans on the duration, and tint the
-        // battery suffix separately.
-        String suffix = " • " + level + "%";
+        // "19 min • 87% → 84%": preserve Maps' own traffic-colour spans on the duration, and tint
+        // the battery suffix separately.
+        CharSequence badge = badgeText(view, currentCharge(), level);
+        String suffix = " • " + badge;
         String line = text + suffix;
         lastApplied = line;
         android.text.SpannableStringBuilder ssb = new android.text.SpannableStringBuilder(current);
         int start = ssb.length();
-        ssb.append(suffix);
+        ssb.append(" • ");
+        ssb.append(badge);
         ssb.setSpan(new android.text.style.ForegroundColorSpan(socColor(view, level)),
                 start, ssb.length(), android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
         view.setText(ssb, TextView.BufferType.SPANNABLE);

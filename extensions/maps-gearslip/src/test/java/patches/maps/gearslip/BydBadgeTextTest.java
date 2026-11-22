@@ -35,11 +35,22 @@ public class BydBadgeTextTest {
     }
 
     @Test
-    public void noArrowWhenThereIsNothingToCompare() {
+    public void equalEndsStillShowBothPercentages() {
         TextView target = new TextView(RuntimeEnvironment.getApplication());
         target.setTextSize(14f);
 
-        assertEquals("27%", BydVehicle.badgeText(target, 27, 27).toString());
+        CharSequence badge = BydVehicle.badgeText(target, 27, 27);
+        assertEquals("27%\u2009\u2192\u200927%", badge.toString());
+        assertEquals(1, ((Spanned) badge).getSpans(
+                0, badge.length(), android.text.style.ReplacementSpan.class).length);
+    }
+
+    @Test
+    public void unknownCurrentFallsBackToTheArrival() {
+        TextView target = new TextView(RuntimeEnvironment.getApplication());
+        target.setTextSize(14f);
+
         assertEquals("27%", BydVehicle.badgeText(target, -1, 27).toString());
+        assertEquals("", BydVehicle.badgeText(target, -1, -1).toString());
     }
 }
