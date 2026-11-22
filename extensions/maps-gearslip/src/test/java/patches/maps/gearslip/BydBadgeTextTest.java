@@ -4,7 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import android.text.Spanned;
-import android.text.style.ImageSpan;
+import android.text.style.ReplacementSpan;
 import android.widget.TextView;
 
 import org.junit.Test;
@@ -19,20 +19,19 @@ import org.robolectric.annotation.Config;
 public class BydBadgeTextTest {
 
     @Test
-    public void theArrowIsACenteredDrawableNotAGlyph() {
+    public void theArrowIsADrawnSpanOnTheDigitsOpticalCentre() {
         TextView target = new TextView(RuntimeEnvironment.getApplication());
         target.setTextSize(14f);
         target.setTextColor(0xFF137333);
 
         CharSequence badge = BydVehicle.badgeText(target, 32, 27);
 
-        assertEquals("32%\u2009\uFFFC\u200927%", badge.toString());
-        ImageSpan[] arrows = ((Spanned) badge).getSpans(
-                0, badge.length(), ImageSpan.class);
+        assertEquals("32%\u2009\u2192\u200927%", badge.toString());
+        android.text.style.ReplacementSpan[] arrows = ((Spanned) badge).getSpans(
+                0, badge.length(), android.text.style.ReplacementSpan.class);
         assertEquals(1, arrows.length);
-        assertEquals(ImageSpan.ALIGN_CENTER, arrows[0].getVerticalAlignment());
-        assertTrue(arrows[0].getDrawable().getIntrinsicWidth() > 0);
-        assertTrue(arrows[0].getDrawable().getIntrinsicHeight() > 0);
+        assertTrue(arrows[0] instanceof BydVehicle.CenteredArrowSpan);
+        assertTrue(arrows[0].getSize(new android.graphics.Paint(), badge, 0, 1, null) > 0);
     }
 
     @Test

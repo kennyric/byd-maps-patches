@@ -284,61 +284,41 @@ public final class BydVehicle {
     }
 
     /**
-     * "32% → 27%" with the arrow drawn instead of typed. The fallback font puts U+2192 on the
-     * baseline, which reads low against the digits in the car card, so the arrow is an ImageSpan
-     * centred on the text's midline.
+     * "32% → 27%" with a raised arrow. The fallback font puts U+2192 on the baseline, so a span
+     * that draws it a little higher keeps it optically centred; a custom drawable was too thin to
+     * read on the head-unit surface.
      */
     static CharSequence badgeText(TextView target, int current, int level) {
         if (current < 0) return level + "%";
         if (current == level) return current + "%";
-        String plain = current + "%\u2009\uFFFC\u2009" + level + "%";
+        String plain = current + "%\u2009\u2192\u2009" + level + "%";
         android.text.SpannableString text = new android.text.SpannableString(plain);
-        int at = plain.indexOf('\uFFFC');
-        if (at >= 0 && target != null) {
-            int size = Math.max(1, Math.round(target.getTextSize() * 0.62f));
-            text.setSpan(new android.text.style.ImageSpan(
-                            new ArrowDrawable(target.getCurrentTextColor(), size),
-                            "\uFFFC", android.text.style.ImageSpan.ALIGN_CENTER),
-                    at, at + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        int at = plain.indexOf('\u2192');
+        if (at >= 0) {
+            text.setSpan(new CenteredArrowSpan(), at, at + 1,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         return text;
     }
 
-    /** A right arrow drawn with strokes, so its centre is the text's centre, not the baseline. */
-    private static final class ArrowDrawable extends android.graphics.drawable.Drawable {
-        private final android.graphics.Paint paint =
-                new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-        private final int size;
+    /**
+     * Draws the arrow with the TextView's own paint (same size, colour and typeface) and lifts it
+     * by a fraction of the text size so it sits on the digits' optical centre instead of the
+     * baseline.
+     */
+    static final class CenteredArrowSpan extends android.text.style.ReplacementSpan {
+        private static final float LIFT_EM = 0.06f;
 
-        ArrowDrawable(int color, int sizePx) {
-            this.size = sizePx;
-            paint.setColor(color);
-            paint.setStyle(android.graphics.Paint.Style.STROKE);
-            paint.setStrokeWidth(Math.max(1f, sizePx * 0.14f));
-            paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
-            paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+        @Override public int getSize(android.graphics.Paint paint, CharSequence text,
+                                     int start, int end, android.graphics.Paint.FontMetricsInt fm) {
+            return (int) Math.ceil(paint.measureText("\u2192"));
         }
 
-        @Override public int getIntrinsicWidth() { return size; }
-        @Override public int getIntrinsicHeight() { return size; }
-
-        @Override public void draw(android.graphics.Canvas canvas) {
-            float w = size;
-            float h = size;
-            float left = w * 0.10f;
-            float right = w * 0.90f;
-            float mid = h / 2f;
-            float head = w * 0.28f;
-            canvas.drawLine(left, mid, right, mid, paint);
-            canvas.drawLine(right - head, mid - head * 0.62f, right, mid, paint);
-            canvas.drawLine(right - head, mid + head * 0.62f, right, mid, paint);
+        @Override public void draw(android.graphics.Canvas canvas, CharSequence text,
+                                   int start, int end, float x, int top, int y, int bottom,
+                                   android.graphics.Paint paint) {
+            canvas.drawText("\u2192", x, y - paint.getTextSize() * LIFT_EM, paint);
         }
-
-        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
-        @Override public void setColorFilter(android.graphics.ColorFilter colorFilter) {
-            paint.setColorFilter(colorFilter);
-        }
-        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }
 
     private static void allowInlineGrowth(View root, TextView target) {
