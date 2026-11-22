@@ -214,7 +214,9 @@ jobs:
               echo "origin/main advertises newer v${remote}; leaving it in place" >&2
               exit 0
             fi
-            if git rebase --quiet origin/main && git push origin HEAD:main; then
+            # The build leaves gradle.properties (version) and dist/ dirty, so a plain rebase
+            # refuses to run. Autostash keeps those edits out of the way and restores them after.
+            if git -c rebase.autoStash=true rebase --quiet origin/main && git push origin HEAD:main; then
               exit 0
             fi
             git rebase --abort >/dev/null 2>&1 || true

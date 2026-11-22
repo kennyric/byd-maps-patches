@@ -96,6 +96,26 @@ Git attribution remains `johninnl`; the live publisher is the GitLab account `jo
 - Run `node --test tests/test_release_branding.cjs tests/test_preview_release.cjs tests/test_identity.cjs tests/test_codeberg.cjs tests/test_gitgud.cjs tests/test_gitlab.cjs tests/test_gitlab_publish.cjs` after release automation changes. Run `python3 -m unittest discover -s tests` for Python regression checks; use the release workflow's Gradle checks for Android changes.
 - CI audits checked-out history; release automation also verifies the token owner and effective Git identities before publishing. These checks do not enforce local operations unless run, and cannot stop an already-authorized direct push before it reaches GitLab. Follow the identity requirements for every operation.
 
+## GitHub fork release pipeline (byd-maps-patches)
+
+- Pushing `main` to the **`github`** remote (`kennyric/byd-maps-patches`) triggers `Release` and
+  `Release safety`. The `origin` remote is the upstream GitLab repository; do not push there.
+- The release version is computed in `release.yml` from the highest `v*` tag and the commit
+  subjects since it: `feat(...)` bumps minor, anything else bumps patch. A push with no releasable
+  change still produces the next patch, so only push when a release is intended.
+- Every commit touching `extensions/` or `patches/src/main/kotlin/patches/shared/` needs a
+  `Release-Apps: <App>` trailer (for this work: `Release-Apps: Google Maps`), or `Release safety`
+  fails with "Shared-only commit … needs its own Release-Apps trailer". `ci`, `docs`, `build`,
+  `release` and `deps` scopes are rendered as **General**.
+- The `Publish the discovery manifest` step must rebase with `git -c rebase.autoStash=true`:
+  `gradle.properties` (version) and `dist/` are dirty after the build, and a plain `git rebase`
+  stops with `cannot rebase: You have unstaged changes`, leaving the release published but the
+  run red and `patches-bundle.json` stale. Do not hand-publish the manifest as a workaround; fix
+  the step and let CI push it.
+- Verify a release by checking all three: `gh run list` shows `Release` and `Release safety`
+  green; `gh release view v<version>` lists `patches-<version>.mpp`, its `.sha256` and
+  `patches-bundle.json`; and `git show github/main:patches-bundle.json` advertises that version.
+
 ## Local CI and publishing rules
 
 Operational details, private-file inventory and both channel procedures are in [PUBLISHING.md](PUBLISHING.md). Keep rules here and implementation/setup details there.
