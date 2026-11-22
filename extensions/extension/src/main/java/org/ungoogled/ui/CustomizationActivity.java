@@ -428,6 +428,17 @@ public final class CustomizationActivity extends Activity {
             TextView sourceSub=(TextView)((LinearLayout)sourceRow.getChildAt(0)).getChildAt(1);
             sourceRow.setOnClickListener(v->choose("Navigation data source",ExternalTelemetry.LABELS,ExternalTelemetry.sourceIndex(this),which->{ExternalTelemetry.select(this,ExternalTelemetry.SOURCES[which]);sourceSub.setText(ExternalTelemetry.LABELS[which]);nativeControls.removeAllViews();buildNativeWarningControls(nativeControls);}));
             body.addView(sourceRow);
+            // Whether the patched Maps shows our own arrival estimate at all. The native
+            // automotive EV card already does, so this can be turned off without losing anything.
+            boolean showEstimate=getSharedPreferences(Shapes.PREFS,MODE_PRIVATE).getBoolean("byd_show_estimate",true);
+            LinearLayout estimateRow=rowBase("BYD battery estimate",showEstimate?"Shown":"Hidden");
+            TextView estimateSub=(TextView)((LinearLayout)estimateRow.getChildAt(0)).getChildAt(1);
+            estimateRow.setOnClickListener(v->{
+                boolean next=!getSharedPreferences(Shapes.PREFS,MODE_PRIVATE).getBoolean("byd_show_estimate",true);
+                getSharedPreferences(Shapes.PREFS,MODE_PRIVATE).edit().putBoolean("byd_show_estimate",next).apply();
+                estimateSub.setText(next?"Shown":"Hidden");
+            });
+            body.addView(estimateRow);
             // How often the patched Maps asks byd-open-remote for fresher vehicle data.
             final String[] refreshLabels={"Off","2 minutes","5 minutes","10 minutes","15 minutes","30 minutes","60 minutes"};
             final int[] refreshValues={0,2,5,10,15,30,60};

@@ -74,6 +74,8 @@ public final class BydVehicle {
     /** The status line with the arrival battery, or the original when nothing fresh is known. */
     public static String decorate(String original) {
         if (!ATTACHED.get()) attach(appContext());
+        Context context = appContext();
+        if (!showEstimate(context)) return original;
         if (!DEMO && !fresh(timestamp, System.currentTimeMillis())) return original;
         int charge = DEMO ? 62 : soc;
         int range = DEMO ? 310 : rangeKm;
@@ -234,6 +236,11 @@ public final class BydVehicle {
     private static final java.util.regex.Pattern TIME_PATTERN = java.util.regex.Pattern.compile("[0-9]{1,2}:[0-9]{2}");
 
     private static void paintCar(View root) {
+        if (!showEstimate(root.getContext())) {
+            hideChip();
+            lastCarSubApplied = "";
+            return;
+        }
         if (!(root instanceof android.view.ViewGroup)) {
             hideChip();
             return;
@@ -285,6 +292,19 @@ public final class BydVehicle {
     /** Arrival charge only, e.g. "57%". The native automotive card also carries the battery icon. */
     static CharSequence badgeText(int level) {
         return level < 0 ? "" : level + "%";
+    }
+
+    /** The Customization screen's "BYD battery estimate" switch. Default on. */
+    static boolean showEstimate(Context context) {
+        if (showEstimateOverride != null) return showEstimateOverride;
+        if (context == null) context = appContext();
+        if (context == null) return true;
+        try {
+            return context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+                    .getBoolean(PREF_SHOW_ESTIMATE, true);
+        } catch (RuntimeException unreadable) {
+            return true;
+        }
     }
 
     private static void allowInlineGrowth(View root, TextView target) {
@@ -569,6 +589,10 @@ public final class BydVehicle {
     private static final int POKE_DEFAULT_MINUTES = 5;
     private static final String PREFS = "ungoogled_ui";
     private static final String PREF_REFRESH_MINUTES = "byd_refresh_minutes";
+    /** Whether the patched storefront shows our arrival estimate at all. */
+    private static final String PREF_SHOW_ESTIMATE = "byd_show_estimate";
+    /** Null in production; tests pin the toggle without Android prefs. */
+    static volatile Boolean showEstimateOverride;
     private static volatile long lastPokeAt;
     /** Last moment Maps showed its navigation UI; a poke is only allowed while this is fresh. */
     private static volatile long lastNavigationAt;
@@ -595,6 +619,7 @@ public final class BydVehicle {
     }
 
     private static void poke(Context context, boolean force) {
+        if (!showEstimate(context)) return;
         long now = System.currentTimeMillis();
         // Only while navigating: browsing the map must never cost a cloud request.
         if (now - lastNavigationAt > NAVIGATION_WINDOW_MS) return;
@@ -720,6 +745,7 @@ public final class BydVehicle {
             java.util.regex.Pattern.CASE_INSENSITIVE);
 
     private static void paint(android.app.Activity activity) {
+        if (!showEstimate(activity)) return;
         int id = activity.getResources().getIdentifier(
                 "navigation_time_remaining_label", "id", activity.getPackageName());
         if (id == 0) return;
@@ -782,6 +808,8 @@ public final class BydVehicle {
     /** Queries the provider off the UI thread; the answer lands in the cache for the next bind. */
     public static void refresh(Context context) {
         if (context == null) return;
+        // Hidden estimate: no provider query, so no consumer-triggered cloud refresh either.
+        if (!showEstimate(context)) return;
         long now = System.currentTimeMillis();
         if (now - lastQueryAt < 2000L) return;
         lastQueryAt = now;
@@ -835,5 +863,11 @@ public final class BydVehicle {
         remainingKm = -1;
         travelledKm = 0;
         lastRemainingForTrip = -1;
+        showEstimateOverride = null;
+    }
+
+    /** Tests pin the toggle without Android prefs. */
+    static void setShowEstimateForTesting(Boolean value) {
+        showEstimateOverride = value;
     }
 }

@@ -20,6 +20,18 @@ public class BydVehicleTest {
         assertEquals("17 min · 14 mi", BydVehicle.decorate("17 min · 14 mi"));
     }
 
+    @Test public void hiddenEstimateLeavesTheTextUntouched() {
+        BydVehicle.setShowEstimateForTesting(false);
+        BydVehicle.onStatus(62, 310, System.currentTimeMillis(), "km");
+        assertEquals("17 min · 14 mi", BydVehicle.decorate("17 min · 14 mi"));
+    }
+
+    @Test public void shownEstimateStillDecorates() {
+        BydVehicle.setShowEstimateForTesting(true);
+        BydVehicle.onStatus(62, 310, System.currentTimeMillis(), "km");
+        assertEquals("17 min · 14 mi · 62%", BydVehicle.decorate("17 min · 14 mi"));
+    }
+
     @Test public void freshReadingWithoutADistanceShowsTheCurrentCharge() {
         BydVehicle.onStatus(62, 310, System.currentTimeMillis(), "km");
         assertEquals("17 min · 14 mi · 62%", BydVehicle.decorate("17 min · 14 mi"));
