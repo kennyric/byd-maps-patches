@@ -59,6 +59,8 @@ public final class BydVehicle {
     private static volatile long timestamp;
     private static volatile String unit = "km";
     private static volatile long lastQueryAt;
+    /** After a missing provider or an empty row, do not retry before this moment. */
+    private static volatile long nextQueryAt;
     /** Remaining route distance in kilometres, -1 when the navigation strip could not be read. */
     private static volatile double remainingKm = -1;
     /** Distance driven since the last reading the app could confirm, capped for sanity. */
@@ -811,6 +813,7 @@ public final class BydVehicle {
         // Hidden estimate: no provider query, so no consumer-triggered cloud refresh either.
         if (!showEstimate(context)) return;
         long now = System.currentTimeMillis();
+        if (now < nextQueryAt) return;
         if (now - lastQueryAt < 2000L) return;
         lastQueryAt = now;
         Context app = context.getApplicationContext();
@@ -827,18 +830,40 @@ public final class BydVehicle {
         Cursor cursor = null;
         try {
             cursor = context.getContentResolver().query(statusUri(), null, null, null, null);
-            if (cursor == null || !cursor.moveToFirst()) return;
+            if (cursor == null || !cursor.moveToFirst()) {
+                // The app is installed but has no reading yet: retry at the user's interval.
+                nextQueryAt = System.currentTimeMillis() + failureBackoffMs(context);
+                return;
+            }
             onStatus(
                     value(cursor, COLUMN_SOC, -1),
                     value(cursor, COLUMN_RANGE, -1),
                     cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_TS)),
                     cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_UNIT)));
+            nextQueryAt = 0L;
         } catch (RuntimeException unavailable) {
-            // No provider, no permission, or a malformed row: keep whatever the broadcast gave us.
+            // No provider, no permission, or a malformed row: keep whatever the broadcast gave us
+            // and back off instead of probing every two seconds.
+            nextQueryAt = System.currentTimeMillis() + failureBackoffMs(context);
             Log.w(TAG, "Vehicle status unavailable", unavailable);
         } finally {
             if (cursor != null) cursor.close();
         }
+    }
+
+    /** Retry a failed/empty read at the Customization refresh interval (default 5 min). */
+    static long failureBackoffMs(Context context) {
+        int minutes = POKE_DEFAULT_MINUTES;
+        try {
+            if (context != null) {
+                minutes = context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+                        .getInt(PREF_REFRESH_MINUTES, POKE_DEFAULT_MINUTES);
+            }
+        } catch (RuntimeException unreadable) {
+            minutes = POKE_DEFAULT_MINUTES;
+        }
+        if (minutes <= 0) minutes = POKE_DEFAULT_MINUTES;
+        return Math.max(60_000L, minutes * 60_000L);
     }
 
     private static int value(Cursor cursor, String column, int fallback) {
@@ -860,6 +885,7 @@ public final class BydVehicle {
         timestamp = 0;
         unit = "km";
         lastQueryAt = 0;
+        nextQueryAt = 0;
         remainingKm = -1;
         travelledKm = 0;
         lastRemainingForTrip = -1;
