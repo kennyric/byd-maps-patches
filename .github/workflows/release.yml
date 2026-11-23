@@ -57,7 +57,7 @@ jobs:
           # Characterisation does not depend on tag ancestry: a shallow checkout cannot describe
           # anything, so the highest existing tag is the anchor and its version is compared with
           # the commit subjects since it.
-          highest="$(git tag --list 'v*' --sort=-v:refname | head -1)"
+          highest="$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-' | head -1)"
           if [ -z "${highest}" ]; then
             echo 'No v* tag exists, so the next version is undefined.' >&2
             echo 'Push the tags from the source repository, then re-run.' >&2
@@ -66,7 +66,7 @@ jobs:
           highest="${highest#v}"
           major="$(cut -d. -f1 <<<"${highest}")"
           minor="$(cut -d. -f2 <<<"${highest}")"
-          base="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          base="$(git describe --tags --abbrev=0 --match 'v*' --exclude '*-*' 2>/dev/null || true)"
           if [ -n "${base}" ]; then
             # Tag ancestry is available: a feature since it bumps the minor version.
             if git log --pretty=%s "${base}"..HEAD | grep -qE '^feat(\(|:)'; then
@@ -153,7 +153,7 @@ jobs:
         run: |
           set -euo pipefail
           version='${{ steps.version.outputs.version }}'
-          previous="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          previous="$(git describe --tags --abbrev=0 --match 'v*' --exclude '*-*' 2>/dev/null || true)"
           {
             echo "# BYD Maps patches v${version}"
             echo
